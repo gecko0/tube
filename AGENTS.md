@@ -24,6 +24,7 @@ yt/
 ├── main.py         # CLI entry point (Click commands, interactive mode)
 tests/
 ├── conftest.py     # Shared fixtures: frozen_date, transcripts_dir, sample_entries
+├── test_main.py
 ├── test_transcript.py
 ├── test_storage.py
 ├── test_summarizer.py
@@ -61,6 +62,10 @@ When fixing a bug:
 2. Verify the test fails.
 3. Fix the code.
 4. Verify the test (and all other tests) pass.
+
+## Documentation
+
+When changing CLI commands, flags, output format, or user-facing behavior, update `README.md` to match. This includes the help output block, usage examples, and the interactive mode section.
 
 ## Key design details
 

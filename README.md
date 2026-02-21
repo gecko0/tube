@@ -37,7 +37,7 @@ Follow the prompts to authenticate. Without this, transcript fetching still work
 ### 4. Configure your shell
 
 ```bash
-yt --setup-shell
+yt setup-shell
 ```
 
 This adds aliases so you can paste YouTube URLs without quoting them. Without this, zsh will error on the `?` in URLs. After running, restart your terminal or `source ~/.zshrc`.
@@ -45,22 +45,28 @@ This adds aliases so you can paste YouTube URLs without quoting them. Without th
 ### 5. Verify the installation
 
 ```bash
-yt --help
+yt -h
 ```
 
 You should see:
 
 ```
-Usage: yt [OPTIONS] [URL]
+Usage: yt [ARGS]...
 
   yt — YouTube Transcript & Summary CLI.
 
+  Commands:
+    yt                        Interactive mode
+    yt <url>                  Fetch transcript & summarize a video
+    yt list,    yt l          List all saved transcripts
+    yt view,    yt v [ref]    View transcript (latest if no ref)
+    yt summary, yt s [ref]    View summary (latest if no ref)
+    yt setup-shell            Configure shell aliases for URLs
+
+  [ref] can be a # index from the list or a video ID.
+
 Options:
-  --list          List all saved transcripts.
-  --view TEXT     Print transcript for a video ID.
-  --summary TEXT  Print summary for a video ID.
-  --setup-shell   Configure shell aliases so URLs work without quoting.
-  --help          Show this message and exit.
+  -h, --help  Show this message and exit.
 ```
 
 ### Uninstall
@@ -78,10 +84,10 @@ git clone https://github.com/gecko0/tube.git
 cd tube
 uv venv
 source .venv/bin/activate
-uv pip install -e .
+uv pip install -e ".[dev]"
 ```
 
-This creates an isolated virtual environment so your changes don't affect the global install.
+This creates an isolated virtual environment with test dependencies (pytest) so your changes don't affect the global install.
 
 ## Usage
 
@@ -102,19 +108,23 @@ If the video was already fetched, you'll be asked whether to skip or regenerate.
 ### List saved transcripts
 
 ```bash
-yt --list
+yt list        # or: yt l
 ```
 
 ### View a transcript
 
 ```bash
-yt --view <video-id>
+yt view        # latest transcript
+yt v 3         # transcript #3 from the list
+yt v dQw4w9WgXcQ   # by video ID
 ```
 
 ### View a summary
 
 ```bash
-yt --summary <video-id>
+yt summary     # latest summary
+yt s 3         # summary #3 from the list
+yt s dQw4w9WgXcQ   # by video ID
 ```
 
 ### Interactive mode
@@ -128,10 +138,12 @@ Run `yt` with no arguments to get a menu:
 
 [1] Add new video
 [2] List transcripts
-[3] View transcript
-[4] View summary
+[3] View transcript  (3 <#|id>)
+[4] View summary     (4 <#|id>)
 [5] Exit
 ```
+
+In interactive mode you can combine action and reference in one input, e.g. `4 1` to view the summary of transcript #1.
 
 ## Where files are stored
 
@@ -174,13 +186,21 @@ tube/
 ├── pyproject.toml          # package config, dependencies, entry point
 ├── .python-version         # pinned Python version
 ├── README.md
-└── yt/
-    ├── __init__.py
-    ├── main.py             # CLI entry point and commands
-    ├── transcript.py       # fetch transcript and metadata from YouTube
-    ├── summarizer.py       # call claude -p for summarization
-    ├── storage.py          # list, read, find saved folders
-    └── config.py           # paths and constants
+├── AGENTS.md               # AI agent conventions
+├── CLAUDE.md -> AGENTS.md
+├── yt/
+│   ├── __init__.py
+│   ├── main.py             # CLI entry point and commands
+│   ├── transcript.py       # fetch transcript and metadata from YouTube
+│   ├── summarizer.py       # call claude -p for summarization
+│   ├── storage.py          # list, read, find saved folders
+│   └── config.py           # paths and constants
+└── tests/
+    ├── conftest.py         # shared test fixtures
+    ├── test_transcript.py
+    ├── test_storage.py
+    ├── test_summarizer.py
+    └── test_main.py
 ```
 
 ## How it works
@@ -197,7 +217,7 @@ tube/
 2. Create a feature branch (`git checkout -b my-feature`)
 3. Set up the development environment (see [Development setup](#development-setup))
 4. Make your changes
-5. Test manually with `yt <url>` and `yt --list`
+5. Run `pytest -v` to make sure all tests pass
 6. Commit your changes (`git commit -m "Add my feature"`)
 7. Push to your branch (`git push origin my-feature`)
 8. Open a pull request
