@@ -5,12 +5,12 @@ from .config import TRANSCRIPTS_DIR
 
 
 def list_transcripts() -> list[dict]:
-    """List all saved transcripts, sorted by date descending."""
+    """List all saved transcripts, sorted by date ascending (oldest first)."""
     if not TRANSCRIPTS_DIR.exists():
         return []
 
     results = []
-    for folder in sorted(TRANSCRIPTS_DIR.iterdir(), reverse=True):
+    for folder in sorted(TRANSCRIPTS_DIR.iterdir()):
         if not folder.is_dir():
             continue
         parsed = parse_folder_name(folder.name)

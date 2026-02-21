@@ -10,8 +10,15 @@ dependencies = [
     "requests",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
 [project.scripts]
 yt = "yt.main:cli"
+tube = "yt.main:cli"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [build-system]
 requires = ["setuptools>=68.0"]

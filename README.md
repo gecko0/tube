@@ -1,4 +1,4 @@
-# yt — YouTube Transcript & Summary CLI
+# tube — YouTube Transcript & Summary CLI
 
 Fetch YouTube video transcripts and summarize them with Claude, all from the terminal.
 
@@ -13,8 +13,8 @@ Fetch YouTube video transcripts and summarize them with Claude, all from the ter
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/user/youtube-summarizer.git
-cd youtube-summarizer
+git clone https://github.com/gecko0/tube.git
+cd tube
 ```
 
 ### 2. Install the CLI
@@ -34,7 +34,15 @@ claude login
 
 Follow the prompts to authenticate. Without this, transcript fetching still works but summarization will be skipped with a helpful error message.
 
-### 4. Verify the installation
+### 4. Configure your shell
+
+```bash
+yt --setup-shell
+```
+
+This adds aliases so you can paste YouTube URLs without quoting them. Without this, zsh will error on the `?` in URLs. After running, restart your terminal or `source ~/.zshrc`.
+
+### 5. Verify the installation
 
 ```bash
 yt --help
@@ -51,6 +59,7 @@ Options:
   --list          List all saved transcripts.
   --view TEXT     Print transcript for a video ID.
   --summary TEXT  Print summary for a video ID.
+  --setup-shell   Configure shell aliases so URLs work without quoting.
   --help          Show this message and exit.
 ```
 
@@ -65,8 +74,8 @@ uv tool uninstall yt-cli
 If you want to contribute or modify the code:
 
 ```bash
-git clone https://github.com/user/youtube-summarizer.git
-cd youtube-summarizer
+git clone https://github.com/gecko0/tube.git
+cd tube
 uv venv
 source .venv/bin/activate
 uv pip install -e .
@@ -114,7 +123,7 @@ Run `yt` with no arguments to get a menu:
 
 ```
 ╭──────────────────────────────╮
-│   yt — YouTube Transcripts   │
+│  tube — YouTube Transcripts   │
 ╰──────────────────────────────╯
 
 [1] Add new video
@@ -161,7 +170,7 @@ export YT_TRANSCRIPTS_DIR=~/my-transcripts
 ## Project structure
 
 ```
-youtube-summarizer/
+tube/
 ├── pyproject.toml          # package config, dependencies, entry point
 ├── .python-version         # pinned Python version
 ├── README.md

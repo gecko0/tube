@@ -1,8 +1,11 @@
+import os
 import subprocess
 import sys
+from pathlib import Path
 
 import click
 from rich.console import Console
+from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
@@ -11,6 +14,34 @@ from .summarizer import save_summary, summarize
 from .transcript import extract_video_id, fetch_metadata, fetch_transcript, save_transcript
 
 console = Console()
+
+
+def resolve_ref(ref: str | None) -> tuple[Path, str]:
+    """Resolve a reference (index number, video ID, or None for latest) to a (folder, video_id) tuple."""
+    transcripts = list_transcripts()
+
+    if ref is None:
+        # Default to latest (last item, since list is ascending)
+        if not transcripts:
+            console.print("[red]No transcripts saved yet.[/red]")
+            sys.exit(1)
+        entry = transcripts[-1]
+        return entry["folder"], entry["video_id"]
+
+    if ref.isdigit():
+        index = int(ref)
+        if index < 1 or index > len(transcripts):
+            console.print(f"[red]Invalid index: {ref}[/red] (have {len(transcripts)} transcripts)")
+            sys.exit(1)
+        entry = transcripts[index - 1]
+        return entry["folder"], entry["video_id"]
+
+    # Treat as video ID
+    folder = find_by_video_id(ref)
+    if not folder:
+        console.print(f"[red]No transcript found for {ref}[/red]")
+        sys.exit(1)
+    return folder, ref
 
 
 def add_video(url: str, regenerate: bool = False):
@@ -68,15 +99,17 @@ def add_video(url: str, regenerate: bool = False):
 
     save_summary(folder, summary_text, title, video_id)
     console.print("[green]Summary saved.[/green]")
+    console.print()
+    console.print(Markdown(summary_text))
     console.print(f"\n[bold green]Done![/bold green] {folder}")
 
 
 def show_list():
-    """Display all saved transcripts as a table."""
+    """Display all saved transcripts as a table. Returns the list."""
     transcripts = list_transcripts()
     if not transcripts:
         console.print("[dim]No transcripts saved yet.[/dim]")
-        return
+        return transcripts
 
     table = Table(title="Saved Transcripts")
     table.add_column("#", style="dim", width=4)
@@ -93,28 +126,58 @@ def show_list():
     return transcripts
 
 
-def view_transcript(video_id: str):
-    folder = find_by_video_id(video_id)
-    if not folder:
-        console.print(f"[red]No transcript found for {video_id}[/red]")
-        sys.exit(1)
+def view_transcript(folder: Path):
+    """Print a transcript from its folder."""
     content = read_transcript(folder)
     if content:
-        console.print(content)
+        console.print(Markdown(content))
     else:
         console.print("[red]transcript.md not found.[/red]")
 
 
-def view_summary(video_id: str):
-    folder = find_by_video_id(video_id)
-    if not folder:
-        console.print(f"[red]No transcript found for {video_id}[/red]")
-        sys.exit(1)
+def view_summary(folder: Path):
+    """Print a summary from its folder."""
     content = read_summary(folder)
     if content:
-        console.print(content)
+        console.print(Markdown(content))
     else:
         console.print("[red]summary.md not found.[/red]")
+
+
+def setup_shell():
+    """Add noglob aliases to the user's shell config so URLs work without quoting."""
+    shell = os.environ.get("SHELL", "")
+    if "zsh" in shell:
+        rc_file = Path.home() / ".zshrc"
+    elif "bash" in shell:
+        rc_file = Path.home() / ".bashrc"
+    else:
+        console.print(f"[red]Unsupported shell:[/red] {shell or 'unknown'}")
+        console.print("Manually add these aliases to your shell config:")
+        console.print("  alias yt='noglob yt'")
+        console.print("  alias tube='noglob tube'")
+        return
+
+    aliases = {
+        "alias yt='noglob yt'",
+        "alias tube='noglob tube'",
+    }
+
+    # Read existing content to check what's already there
+    existing = rc_file.read_text() if rc_file.exists() else ""
+    to_add = [a for a in sorted(aliases) if a not in existing]
+
+    if not to_add:
+        console.print("[green]Shell already configured.[/green] noglob aliases are present.")
+        return
+
+    with rc_file.open("a") as f:
+        f.write("\n# yt: allow unquoted URLs with special characters\n")
+        for alias in to_add:
+            f.write(f"{alias}\n")
+
+    console.print(f"[green]Added aliases to {rc_file}[/green]")
+    console.print(f"Run [bold]source {rc_file}[/bold] or open a new terminal to apply.")
 
 
 def interactive_mode():
@@ -130,47 +193,72 @@ def interactive_mode():
         console.print()
         console.print("[1] Add new video")
         console.print("[2] List transcripts")
-        console.print("[3] View transcript")
-        console.print("[4] View summary")
+        console.print("[3] View transcript  [dim](3 <#|id>)[/dim]")
+        console.print("[4] View summary     [dim](4 <#|id>)[/dim]")
         console.print("[5] Exit")
         console.print()
 
-        choice = click.prompt(">", type=str).strip()
+        parts = click.prompt(">", type=str).strip().split()
+        if not parts:
+            continue
 
-        if choice == "1":
-            url = click.prompt("YouTube URL")
+        action = parts[0]
+        ref = parts[1] if len(parts) > 1 else None
+
+        if action == "1":
+            url = ref or click.prompt("YouTube URL")
             add_video(url)
-        elif choice == "2":
+        elif action == "2":
             show_list()
-        elif choice == "3":
-            vid = click.prompt("Video ID")
-            view_transcript(vid)
-        elif choice == "4":
-            vid = click.prompt("Video ID")
-            view_summary(vid)
-        elif choice == "5":
+        elif action == "3":
+            if ref is None:
+                ref = click.prompt("Video # or ID")
+            folder, _ = resolve_ref(ref)
+            view_transcript(folder)
+        elif action == "4":
+            if ref is None:
+                ref = click.prompt("Video # or ID")
+            folder, _ = resolve_ref(ref)
+            view_summary(folder)
+        elif action in ("5", "q", "exit"):
             break
         else:
             console.print("[dim]Invalid choice.[/dim]")
 
 
-@click.command()
-@click.argument("url", required=False)
-@click.option("--list", "list_all", is_flag=True, help="List all saved transcripts.")
-@click.option("--view", "view_id", default=None, help="Print transcript for a video ID.")
-@click.option("--summary", "summary_id", default=None, help="Print summary for a video ID.")
-def cli(url, list_all, view_id, summary_id):
+@click.command(context_settings={"help_option_names": ["-h", "--help"]})
+@click.argument("args", nargs=-1)
+def cli(args):
     """yt — YouTube Transcript & Summary CLI.
 
-    Run with no arguments for interactive mode, or pass a YouTube URL to fetch + summarize.
+    \b
+    Commands:
+      yt                        Interactive mode
+      yt <url>                  Fetch transcript & summarize a video
+      yt list,    yt l          List all saved transcripts
+      yt view,    yt v [ref]    View transcript (latest if no ref)
+      yt summary, yt s [ref]    View summary (latest if no ref)
+      yt setup-shell            Configure shell aliases for URLs
+
+    [ref] can be a # index from the list or a video ID.
     """
-    if list_all:
-        show_list()
-    elif view_id:
-        view_transcript(view_id)
-    elif summary_id:
-        view_summary(summary_id)
-    elif url:
-        add_video(url)
-    else:
+    if not args:
         interactive_mode()
+        return
+
+    cmd = args[0]
+    ref = args[1] if len(args) > 1 else None
+
+    if cmd in ("l", "list"):
+        show_list()
+    elif cmd in ("v", "view"):
+        folder, _ = resolve_ref(ref)
+        view_transcript(folder)
+    elif cmd in ("s", "summary"):
+        folder, _ = resolve_ref(ref)
+        view_summary(folder)
+    elif cmd == "setup-shell":
+        setup_shell()
+    else:
+        # Treat as a URL
+        add_video(cmd)
