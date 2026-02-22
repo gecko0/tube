@@ -61,6 +61,7 @@ Usage: yt [ARGS]...
     yt list,    yt l          List all saved transcripts
     yt view,    yt v [ref]    View transcript (latest if no ref)
     yt summary, yt s [ref]    View summary (latest if no ref)
+    yt web,     yt w [port]   Open web viewer (default port 8765)
     yt setup-shell            Configure shell aliases for URLs
 
   [ref] can be a # index from the list or a video ID.
@@ -127,6 +128,15 @@ yt s 3         # summary #3 from the list
 yt s dQw4w9WgXcQ   # by video ID
 ```
 
+### Open web viewer
+
+```bash
+yt web         # opens browser at http://localhost:8765
+yt w 9000      # custom port
+```
+
+This starts a local web server and opens a browser-based viewer with a sidebar of all saved videos, embedded YouTube player, and rendered summaries/transcripts.
+
 ### Interactive mode
 
 Run `yt` with no arguments to get a menu:
@@ -140,7 +150,8 @@ Run `yt` with no arguments to get a menu:
 [2] List transcripts
 [3] View transcript  (3 <#|id>)
 [4] View summary     (4 <#|id>)
-[5] Exit
+[5] Open web viewer
+[6] Exit
 ```
 
 In interactive mode you can combine action and reference in one input, e.g. `4 1` to view the summary of transcript #1.
@@ -194,12 +205,16 @@ tube/
 │   ├── transcript.py       # fetch transcript and metadata from YouTube
 │   ├── summarizer.py       # call claude -p for summarization
 │   ├── storage.py          # list, read, find saved folders
-│   └── config.py           # paths and constants
+│   ├── config.py           # paths and constants
+│   ├── server.py           # FastAPI web server for browser UI
+│   └── web/dist/           # pre-built React frontend (committed)
+├── web/                    # React/Vite/shadcn frontend source
 └── tests/
     ├── conftest.py         # shared test fixtures
     ├── test_transcript.py
     ├── test_storage.py
     ├── test_summarizer.py
+    ├── test_server.py
     └── test_main.py
 ```
 

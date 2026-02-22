@@ -9,6 +9,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
+from .server import run_server
 from .storage import find_by_video_id, list_transcripts, read_summary, read_transcript
 from .summarizer import save_summary, summarize
 from .transcript import extract_video_id, fetch_metadata, fetch_transcript, save_transcript
@@ -195,7 +196,8 @@ def interactive_mode():
         console.print("[2] List transcripts")
         console.print("[3] View transcript  [dim](3 <#|id>)[/dim]")
         console.print("[4] View summary     [dim](4 <#|id>)[/dim]")
-        console.print("[5] Exit")
+        console.print("[5] Open web viewer")
+        console.print("[6] Exit")
         console.print()
 
         parts = click.prompt(">", type=str).strip().split()
@@ -220,7 +222,10 @@ def interactive_mode():
                 ref = click.prompt("Video # or ID")
             folder, _ = resolve_ref(ref)
             view_summary(folder)
-        elif action in ("5", "q", "exit"):
+        elif action == "5":
+            port = int(ref) if ref else 8765
+            run_server(port)
+        elif action in ("6", "q", "exit"):
             break
         else:
             console.print("[dim]Invalid choice.[/dim]")
@@ -238,6 +243,7 @@ def cli(args):
       yt list,    yt l          List all saved transcripts
       yt view,    yt v [ref]    View transcript (latest if no ref)
       yt summary, yt s [ref]    View summary (latest if no ref)
+      yt web,     yt w [port]   Open web viewer (default port 8765)
       yt setup-shell            Configure shell aliases for URLs
 
     [ref] can be a # index from the list or a video ID.
@@ -257,6 +263,9 @@ def cli(args):
     elif cmd in ("s", "summary"):
         folder, _ = resolve_ref(ref)
         view_summary(folder)
+    elif cmd in ("w", "web"):
+        port = int(ref) if ref else 8765
+        run_server(port)
     elif cmd == "setup-shell":
         setup_shell()
     else:
