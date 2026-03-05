@@ -10,5 +10,8 @@ build/
 .venv/
 .env
 
+# OS
+.DS_Store
+
 # Frontend
 web/node_modules/
