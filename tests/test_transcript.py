@@ -110,12 +110,12 @@ class TestFormatTimestamp:
 # ---------------------------------------------------------------------------
 class TestBuildFolderName:
     def test_format(self, frozen_date):
-        result = build_folder_name("abc123_DEFG", "My Great Video!")
-        assert result == "2025-06-15 - abc123_DEFG - My Great Video"
+        result = build_folder_name("abc123_DEFG", "My Great Video!", frozen_date)
+        assert result == "2025-06-15T103045 - abc123_DEFG - My Great Video"
 
     def test_title_sanitized(self, frozen_date):
-        result = build_folder_name("vid1234_5678", "A@B#C$D")
-        assert result == "2025-06-15 - vid1234_5678 - ABCD"
+        result = build_folder_name("vid1234_5678", "A@B#C$D", frozen_date)
+        assert result == "2025-06-15T103045 - vid1234_5678 - ABCD"
 
 
 # ---------------------------------------------------------------------------
@@ -123,24 +123,24 @@ class TestBuildFolderName:
 # ---------------------------------------------------------------------------
 class TestBuildTranscriptMd:
     def test_contains_header_fields(self, frozen_date, sample_entries):
-        md = build_transcript_md(sample_entries, "Title", "Author", "vid12345678")
+        md = build_transcript_md(sample_entries, "Title", "Author", "vid12345678", frozen_date)
         assert "**URL**: https://youtube.com/watch?v=vid12345678" in md
         assert "**Author**: Author" in md
-        assert "**Fetched**: 2025-06-15" in md
+        assert "**Fetched**: 2025-06-15T10:30:45-04:00" in md
         assert "**Video ID**: vid12345678" in md
 
     def test_formats_entries_with_timestamps(self, frozen_date, sample_entries):
-        md = build_transcript_md(sample_entries, "T", "A", "v1234567890")
+        md = build_transcript_md(sample_entries, "T", "A", "v1234567890", frozen_date)
         assert "[00:00] Hello and welcome." in md
         assert "[01:05] Today we talk about Python." in md
         assert "[01:01:01] Let's wrap up." in md
 
     def test_starts_with_heading(self, frozen_date, sample_entries):
-        md = build_transcript_md(sample_entries, "My Title", "A", "v")
+        md = build_transcript_md(sample_entries, "My Title", "A", "v", frozen_date)
         assert md.startswith("# My Title\n")
 
     def test_ends_with_newline(self, frozen_date, sample_entries):
-        md = build_transcript_md(sample_entries, "T", "A", "v")
+        md = build_transcript_md(sample_entries, "T", "A", "v", frozen_date)
         assert md.endswith("\n")
 
 
@@ -235,4 +235,4 @@ class TestSaveTranscript:
         folder = save_transcript(
             "dQw4w9WgXcQ", "My Video", "Author", sample_entries
         )
-        assert folder.name == "2025-06-15 - dQw4w9WgXcQ - My Video"
+        assert folder.name == "2025-06-15T103045 - dQw4w9WgXcQ - My Video"

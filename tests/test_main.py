@@ -1,6 +1,8 @@
+from unittest.mock import patch
+
 import pytest
 
-from yt.main import resolve_ref
+from yt.main import delete_video_cmd, resolve_ref
 
 
 # ---------------------------------------------------------------------------
@@ -56,3 +58,50 @@ class TestResolveRef:
 
         with pytest.raises(SystemExit):
             resolve_ref("nonexistent")
+
+
+# ---------------------------------------------------------------------------
+# delete_video_cmd
+# ---------------------------------------------------------------------------
+class TestDeleteVideoCmd:
+    def test_delete_by_index(self, transcripts_dir):
+        folder = transcripts_dir / "2025-06-15 - vid1 - My Title"
+        folder.mkdir()
+        (folder / "transcript.md").write_text("content")
+
+        with patch("yt.main.click.confirm", return_value=True):
+            delete_video_cmd("1")
+
+        assert not folder.exists()
+
+    def test_delete_by_video_id(self, transcripts_dir):
+        folder = transcripts_dir / "2025-06-15 - dQw4w9WgXcQ - Title"
+        folder.mkdir()
+        (folder / "transcript.md").write_text("content")
+
+        with patch("yt.main.click.confirm", return_value=True):
+            delete_video_cmd("dQw4w9WgXcQ")
+
+        assert not folder.exists()
+
+    def test_delete_cancelled(self, transcripts_dir):
+        folder = transcripts_dir / "2025-06-15 - vid1 - Title"
+        folder.mkdir()
+        (folder / "transcript.md").write_text("content")
+
+        with patch("yt.main.click.confirm", return_value=False):
+            delete_video_cmd("1")
+
+        assert folder.exists()
+
+    def test_delete_latest_when_no_ref(self, transcripts_dir):
+        folder1 = transcripts_dir / "2025-01-01 - vid1 - First"
+        folder1.mkdir()
+        folder2 = transcripts_dir / "2025-06-15 - vid2 - Second"
+        folder2.mkdir()
+
+        with patch("yt.main.click.confirm", return_value=True):
+            delete_video_cmd(None)
+
+        assert folder1.exists()
+        assert not folder2.exists()

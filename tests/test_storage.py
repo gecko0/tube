@@ -1,6 +1,7 @@
 import pytest
 
 from yt.storage import (
+    delete_video,
     find_by_video_id,
     list_transcripts,
     parse_folder_name,
@@ -13,10 +14,18 @@ from yt.storage import (
 # parse_folder_name
 # ---------------------------------------------------------------------------
 class TestParseFolderName:
-    def test_valid_name(self):
+    def test_valid_name_legacy(self):
         result = parse_folder_name("2025-06-15 - dQw4w9WgXcQ - My Video Title")
         assert result == {
             "date": "2025-06-15",
+            "video_id": "dQw4w9WgXcQ",
+            "title": "My Video Title",
+        }
+
+    def test_valid_name_with_time(self):
+        result = parse_folder_name("2025-06-15T103045 - dQw4w9WgXcQ - My Video Title")
+        assert result == {
+            "date": "2025-06-15T103045",
             "video_id": "dQw4w9WgXcQ",
             "title": "My Video Title",
         }
@@ -77,6 +86,17 @@ class TestListTranscripts:
         results = list_transcripts()
         assert results[0]["has_summary"] is False
 
+    def test_mixed_legacy_and_new_format_sorted(self, transcripts_dir):
+        (transcripts_dir / "2025-01-01 - vid1 - Old Format").mkdir()
+        (transcripts_dir / "2025-06-15T103045 - vid2 - New Format").mkdir()
+        (transcripts_dir / "2025-03-10 - vid3 - Mid Legacy").mkdir()
+
+        results = list_transcripts()
+        assert len(results) == 3
+        assert results[0]["video_id"] == "vid1"
+        assert results[1]["video_id"] == "vid3"
+        assert results[2]["video_id"] == "vid2"
+
     def test_dir_doesnt_exist(self, monkeypatch, tmp_path):
         import yt.storage
 
@@ -104,6 +124,39 @@ class TestFindByVideoId:
 
         monkeypatch.setattr(yt.storage, "TRANSCRIPTS_DIR", tmp_path / "nope")
         assert find_by_video_id("abc12345678") is None
+
+
+# ---------------------------------------------------------------------------
+# delete_video
+# ---------------------------------------------------------------------------
+class TestDeleteVideo:
+    def test_deletes_existing_video(self, transcripts_dir):
+        folder = transcripts_dir / "2025-06-15 - dQw4w9WgXcQ - Title"
+        folder.mkdir()
+        (folder / "transcript.md").write_text("# Hello", encoding="utf-8")
+        (folder / "summary.md").write_text("# Summary", encoding="utf-8")
+
+        assert delete_video("dQw4w9WgXcQ") is True
+        assert not folder.exists()
+
+    def test_returns_false_for_nonexistent(self, transcripts_dir):
+        assert delete_video("nonexistent11") is False
+
+    def test_returns_false_when_dir_missing(self, monkeypatch, tmp_path):
+        import yt.storage
+
+        monkeypatch.setattr(yt.storage, "TRANSCRIPTS_DIR", tmp_path / "nope")
+        assert delete_video("abc12345678") is False
+
+    def test_other_folders_unaffected(self, transcripts_dir):
+        folder1 = transcripts_dir / "2025-01-01 - vid1 - First"
+        folder1.mkdir()
+        folder2 = transcripts_dir / "2025-06-15 - vid2 - Second"
+        folder2.mkdir()
+
+        delete_video("vid1")
+        assert not folder1.exists()
+        assert folder2.exists()
 
 
 # ---------------------------------------------------------------------------

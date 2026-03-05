@@ -16,7 +16,7 @@ class TestBuildSummaryMd:
 
         assert result.startswith("# My Video\n")
         assert "**URL**: https://youtube.com/watch?v=dQw4w9WgXcQ" in result
-        assert "**Generated**: 2025-06-15" in result
+        assert "**Generated**: 2025-06-15T10:30:45-04:00" in result
         assert "Some content here." in result
 
     def test_single_line_input(self, frozen_date):
@@ -25,13 +25,13 @@ class TestBuildSummaryMd:
 
         assert "# Just a heading" in result
         assert "**URL**: https://youtube.com/watch?v=vid12345678" in result
-        assert "**Generated**: 2025-06-15" in result
+        assert "**Generated**: 2025-06-15T10:30:45-04:00" in result
 
     def test_contains_url_and_date(self, frozen_date):
         result = build_summary_md("# T\nBody", "T", "abc12345678")
 
         assert "https://youtube.com/watch?v=abc12345678" in result
-        assert "2025-06-15" in result
+        assert "2025-06-15T10:30:45-04:00" in result
 
     def test_ends_with_newline(self, frozen_date):
         result = build_summary_md("# T\nBody", "T", "abc12345678")

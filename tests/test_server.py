@@ -15,6 +15,9 @@ def client(monkeypatch, transcripts_dir):
     test_app = FastAPI()
     test_app.add_api_route("/api/videos", yt.server.api_list_videos)
     test_app.add_api_route("/api/videos/{video_id}", yt.server.api_get_video)
+    test_app.add_api_route(
+        "/api/videos/{video_id}", yt.server.api_delete_video, methods=["DELETE"]
+    )
     return TestClient(test_app)
 
 
@@ -64,20 +67,20 @@ class TestListVideos:
 
 class TestGetVideo:
     def test_found(self, client, transcripts_dir):
-        _make_video_folder(transcripts_dir, "2025-02-10", "xyz789abc", "Test Video", summary="A great summary")
+        _make_video_folder(transcripts_dir, "2025-02-10T143022", "xyz789abc", "Test Video", summary="A great summary")
 
         resp = client.get("/api/videos/xyz789abc")
         assert resp.status_code == 200
         data = resp.json()
         assert data["video_id"] == "xyz789abc"
         assert data["title"] == "Test Video"
-        assert data["date"] == "2025-02-10"
+        assert data["date"] == "2025-02-10T143022"
         assert "Transcript content" in data["transcript_md"]
         assert "A great summary" in data["summary_md"]
         assert data["thumbnail_url"] == "https://img.youtube.com/vi/xyz789abc/hqdefault.jpg"
 
     def test_no_summary(self, client, transcripts_dir):
-        _make_video_folder(transcripts_dir, "2025-02-10", "nosummary1", "No Summary Video")
+        _make_video_folder(transcripts_dir, "2025-02-10T090000", "nosummary1", "No Summary Video")
 
         resp = client.get("/api/videos/nosummary1")
         assert resp.status_code == 200
@@ -89,3 +92,31 @@ class TestGetVideo:
         resp = client.get("/api/videos/nonexistent")
         assert resp.status_code == 404
         assert resp.json()["detail"] == "Video not found"
+
+
+class TestDeleteVideo:
+    def test_deletes_video(self, client, transcripts_dir):
+        folder = _make_video_folder(
+            transcripts_dir, "2025-01-01", "abc123xyz", "My Video", summary="Summary"
+        )
+        assert folder.exists()
+
+        resp = client.delete("/api/videos/abc123xyz")
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+        assert not folder.exists()
+
+    def test_not_found(self, client):
+        resp = client.delete("/api/videos/nonexistent")
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Video not found"
+
+    def test_video_gone_from_list_after_delete(self, client, transcripts_dir):
+        _make_video_folder(transcripts_dir, "2025-01-01", "vid1aaaaaa", "Video 1")
+        _make_video_folder(transcripts_dir, "2025-01-02", "vid2bbbbbb", "Video 2")
+
+        client.delete("/api/videos/vid1aaaaaa")
+        resp = client.get("/api/videos")
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["video_id"] == "vid2bbbbbb"

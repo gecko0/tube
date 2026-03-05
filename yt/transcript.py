@@ -1,5 +1,5 @@
 import re
-from datetime import date
+from datetime import datetime
 from pathlib import Path
 
 import requests
@@ -50,10 +50,10 @@ def sanitize_title(title: str) -> str:
     return title[:MAX_TITLE_LENGTH]
 
 
-def build_folder_name(video_id: str, title: str) -> str:
-    today = date.today().isoformat()
+def build_folder_name(video_id: str, title: str, now: datetime) -> str:
+    timestamp = now.strftime("%Y-%m-%dT%H%M%S")
     safe_title = sanitize_title(title)
-    return f"{today} - {video_id} - {safe_title}"
+    return f"{timestamp} - {video_id} - {safe_title}"
 
 
 def fetch_transcript(video_id: str) -> list[dict]:
@@ -75,10 +75,10 @@ def format_timestamp(seconds: float) -> str:
 
 
 def build_transcript_md(
-    entries: list[dict], title: str, author: str, video_id: str
+    entries: list[dict], title: str, author: str, video_id: str, now: datetime
 ) -> str:
     url = f"https://youtube.com/watch?v={video_id}"
-    today = date.today().isoformat()
+    today = now.isoformat(timespec="seconds")
 
     lines = [
         f"# {title}",
@@ -102,10 +102,11 @@ def save_transcript(
     video_id: str, title: str, author: str, entries: list[dict]
 ) -> Path:
     """Save transcript to disk. Returns the folder path."""
-    folder_name = build_folder_name(video_id, title)
+    now = datetime.now().astimezone()
+    folder_name = build_folder_name(video_id, title, now)
     folder = TRANSCRIPTS_DIR / folder_name
     folder.mkdir(parents=True, exist_ok=True)
 
-    content = build_transcript_md(entries, title, author, video_id)
+    content = build_transcript_md(entries, title, author, video_id, now)
     (folder / "transcript.md").write_text(content, encoding="utf-8")
     return folder

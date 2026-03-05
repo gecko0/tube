@@ -1,3 +1,4 @@
+import { formatDate } from "@/lib/utils"
 import { ThemeSwitcher } from "@/components/theme-switcher"
 import {
   Sidebar,
@@ -62,7 +63,7 @@ export function AppSidebar({
                             {video.title}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            {video.date}
+                            {formatDate(video.date)}
                           </span>
                         </div>
                       </div>

@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -10,7 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .server import run_server
-from .storage import find_by_video_id, list_transcripts, read_summary, read_transcript
+from .storage import find_by_video_id, list_transcripts, parse_folder_name, read_summary, read_transcript
 from .summarizer import save_summary, summarize
 from .transcript import extract_video_id, fetch_metadata, fetch_transcript, save_transcript
 
@@ -114,7 +115,7 @@ def show_list():
 
     table = Table(title="Saved Transcripts")
     table.add_column("#", style="dim", width=4)
-    table.add_column("Date", width=12)
+    table.add_column("Date", width=19)
     table.add_column("Video ID", width=13)
     table.add_column("Title")
     table.add_column("Summary", width=8)
@@ -143,6 +144,25 @@ def view_summary(folder: Path):
         console.print(Markdown(content))
     else:
         console.print("[red]summary.md not found.[/red]")
+
+
+def delete_video_cmd(ref: str | None):
+    """Delete a saved transcript and summary."""
+    folder, video_id = resolve_ref(ref)
+    parsed = parse_folder_name(folder.name)
+    title = parsed["title"] if parsed else folder.name
+    date_str = parsed["date"] if parsed else "unknown"
+
+    console.print(f"[bold]{title}[/bold]")
+    console.print(f"[dim]{date_str} — {video_id}[/dim]")
+    console.print()
+
+    if not click.confirm("Delete this video?"):
+        console.print("[dim]Cancelled.[/dim]")
+        return
+
+    shutil.rmtree(folder)
+    console.print("[green]Deleted.[/green]")
 
 
 def setup_shell():
@@ -197,7 +217,8 @@ def interactive_mode():
         console.print("[3] View transcript  [dim](3 <#|id>)[/dim]")
         console.print("[4] View summary     [dim](4 <#|id>)[/dim]")
         console.print("[5] Open web viewer")
-        console.print("[6] Exit")
+        console.print("[6] Delete transcript [dim](6 <#|id>)[/dim]")
+        console.print("[7] Exit")
         console.print()
 
         parts = click.prompt(">", type=str).strip().split()
@@ -225,7 +246,11 @@ def interactive_mode():
         elif action == "5":
             port = int(ref) if ref else 8765
             run_server(port)
-        elif action in ("6", "q", "exit"):
+        elif action == "6":
+            if ref is None:
+                ref = click.prompt("Video # or ID")
+            delete_video_cmd(ref)
+        elif action in ("7", "q", "exit"):
             break
         else:
             console.print("[dim]Invalid choice.[/dim]")
@@ -243,6 +268,7 @@ def cli(args):
       yt list,    yt l          List all saved transcripts
       yt view,    yt v [ref]    View transcript (latest if no ref)
       yt summary, yt s [ref]    View summary (latest if no ref)
+      yt delete,  yt d [ref]    Delete transcript & summary (latest if no ref)
       yt web,     yt w [port]   Open web viewer (default port 8765)
       yt setup-shell            Configure shell aliases for URLs
 
@@ -263,6 +289,8 @@ def cli(args):
     elif cmd in ("s", "summary"):
         folder, _ = resolve_ref(ref)
         view_summary(folder)
+    elif cmd in ("d", "delete"):
+        delete_video_cmd(ref)
     elif cmd in ("w", "web"):
         port = int(ref) if ref else 8765
         run_server(port)

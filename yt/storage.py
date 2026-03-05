@@ -1,4 +1,5 @@
 import re
+import shutil
 from pathlib import Path
 
 from .config import TRANSCRIPTS_DIR
@@ -24,7 +25,7 @@ def list_transcripts() -> list[dict]:
 
 def parse_folder_name(name: str) -> dict | None:
     """Parse 'YYYY-MM-DD - video_id - title' folder name."""
-    match = re.match(r"^(\d{4}-\d{2}-\d{2}) - ([a-zA-Z0-9_-]+) - (.+)$", name)
+    match = re.match(r"^(\d{4}-\d{2}-\d{2}(?:T\d{6})?) - ([a-zA-Z0-9_-]+) - (.+)$", name)
     if not match:
         return None
     return {
@@ -45,6 +46,15 @@ def find_by_video_id(video_id: str) -> Path | None:
         if parsed and parsed["video_id"] == video_id:
             return folder
     return None
+
+
+def delete_video(video_id: str) -> bool:
+    """Delete a saved transcript folder by video ID. Returns True if deleted, False if not found."""
+    folder = find_by_video_id(video_id)
+    if not folder:
+        return False
+    shutil.rmtree(folder)
+    return True
 
 
 def read_transcript(folder: Path) -> str | None:

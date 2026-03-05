@@ -61,6 +61,7 @@ Usage: yt [ARGS]...
     yt list,    yt l          List all saved transcripts
     yt view,    yt v [ref]    View transcript (latest if no ref)
     yt summary, yt s [ref]    View summary (latest if no ref)
+    yt delete,  yt d [ref]    Delete transcript & summary (latest if no ref)
     yt web,     yt w [port]   Open web viewer (default port 8765)
     yt setup-shell            Configure shell aliases for URLs
 
@@ -128,6 +129,16 @@ yt s 3         # summary #3 from the list
 yt s dQw4w9WgXcQ   # by video ID
 ```
 
+### Delete a transcript
+
+```bash
+yt delete      # delete the latest transcript
+yt d 3         # delete transcript #3 from the list
+yt d dQw4w9WgXcQ   # by video ID
+```
+
+You'll be asked to confirm before anything is deleted.
+
 ### Open web viewer
 
 ```bash
@@ -151,7 +162,8 @@ Run `yt` with no arguments to get a menu:
 [3] View transcript  (3 <#|id>)
 [4] View summary     (4 <#|id>)
 [5] Open web viewer
-[6] Exit
+[6] Delete transcript (6 <#|id>)
+[7] Exit
 ```
 
 In interactive mode you can combine action and reference in one input, e.g. `4 1` to view the summary of transcript #1.

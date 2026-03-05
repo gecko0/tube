@@ -1,24 +1,33 @@
-from datetime import date
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 import pytest
 
 
-FIXED_DATE = date(2025, 6, 15)
+class _FrozenDatetime(datetime):
+    """Datetime subclass where astimezone() returns self to preserve the frozen tz in tests."""
+
+    def astimezone(self, tz=None):
+        if tz is None:
+            return self
+        return super().astimezone(tz)
+
+
+FIXED_DATETIME = _FrozenDatetime(2025, 6, 15, 10, 30, 45, tzinfo=timezone(timedelta(hours=-4)))
 
 
 @pytest.fixture()
 def frozen_date(monkeypatch):
-    """Freeze date.today() in modules that call it."""
-    fake_date = MagicMock(wraps=date)
-    fake_date.today.return_value = FIXED_DATE
+    """Freeze datetime.now() in modules that call it."""
+    fake_datetime = MagicMock(wraps=datetime)
+    fake_datetime.now.return_value = FIXED_DATETIME
 
     import yt.transcript
     import yt.summarizer
 
-    monkeypatch.setattr(yt.transcript, "date", fake_date)
-    monkeypatch.setattr(yt.summarizer, "date", fake_date)
-    return FIXED_DATE
+    monkeypatch.setattr(yt.transcript, "datetime", fake_datetime)
+    monkeypatch.setattr(yt.summarizer, "datetime", fake_datetime)
+    return FIXED_DATETIME
 
 
 @pytest.fixture()

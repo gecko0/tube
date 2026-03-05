@@ -1,3 +1,4 @@
+import { formatDate } from "@/lib/utils"
 import { Streamdown } from "streamdown"
 import { code } from "@streamdown/code"
 import "streamdown/styles.css"
@@ -36,7 +37,7 @@ export function VideoDetail({ detail }: VideoDetailProps) {
           </a>
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {detail.date}
+          {formatDate(detail.date)}
         </p>
       </div>
 

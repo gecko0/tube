@@ -1,6 +1,6 @@
 import shutil
 import subprocess
-from datetime import date
+from datetime import datetime
 from pathlib import Path
 
 
@@ -92,7 +92,7 @@ IMPORTANT RULES:
 
 def build_summary_md(summary_text: str, title: str, video_id: str) -> str:
     url = f"https://youtube.com/watch?v={video_id}"
-    today = date.today().isoformat()
+    today = datetime.now().astimezone().isoformat(timespec="seconds")
 
     header = (
         f"**URL**: {url}\n"
