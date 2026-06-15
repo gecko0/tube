@@ -8,7 +8,7 @@ importers:
 
   .: {}
 
-  web:
+  apps/web:
     dependencies:
       '@clerk/react':
         specifier: ^6.9.1
@@ -96,7 +96,7 @@ importers:
         specifier: ^7.3.1
         version: 7.3.5(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(yaml@2.9.0)
 
-  web-local:
+  apps/web-local:
     dependencies:
       '@streamdown/code':
         specifier: ^1.0.3

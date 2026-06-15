@@ -21,7 +21,7 @@ cd tube
 ### 2. Install the CLI
 
 ```bash
-uv tool install -e .
+uv tool install -e apps/cli
 ```
 
 This installs `yt` as a global command available from any directory. The `-e` flag makes it editable — code changes take effect immediately without reinstalling.
@@ -90,6 +90,12 @@ pnpm --filter web-local build
 pnpm --filter web build
 ```
 
+Convex lives with the cloud web app. To install Convex's agent skills, run:
+
+```bash
+pnpm convex:skills
+```
+
 ### Development setup
 
 If you want to contribute or modify the code:
@@ -99,10 +105,11 @@ git clone https://github.com/gecko0/tube.git
 cd tube
 uv venv
 source .venv/bin/activate
-uv pip install -e ".[dev]"
+uv pip install -e "apps/cli[dev]"
+rehash
 ```
 
-This creates an isolated virtual environment with test dependencies (pytest) so your changes don't affect the global install.
+This creates an isolated virtual environment with test dependencies (pytest) so your changes don't affect the global install. `rehash` refreshes zsh's command lookup after installing the `yt` and `tube` entry points.
 
 ## Usage
 
@@ -236,31 +243,31 @@ export YT_TRANSCRIPTS_DIR=~/my-transcripts
 
 ```
 tube/
-├── pyproject.toml          # package config, dependencies, entry point
 ├── .python-version         # pinned Python version
 ├── README.md
 ├── AGENTS.md               # AI agent conventions
 ├── CLAUDE.md -> AGENTS.md
-├── yt/
-│   ├── __init__.py
-│   ├── main.py             # CLI entry point and commands
-│   ├── transcript.py       # fetch transcript and metadata from YouTube
-│   ├── summarizer.py       # call claude -p for summarization
-│   ├── storage.py          # list, read, find saved folders
-│   ├── config.py           # paths and constants
-│   ├── cloud.py            # cloud sync config and upload
-│   ├── server.py           # FastAPI web server for browser UI
-│   └── web/dist/           # pre-built React frontend (committed)
-├── convex/                 # Convex cloud backend
-├── web/                    # Cloud web app (React/Vite/shadcn + Convex + Clerk)
-├── web-local/              # Local web viewer source (builds to yt/web/dist/)
-└── tests/
-    ├── conftest.py         # shared test fixtures
-    ├── test_transcript.py
-    ├── test_storage.py
-    ├── test_summarizer.py
-    ├── test_server.py
-    └── test_main.py
+├── docs/
+│   └── convex_rules.md     # Convex conventions
+├── apps/
+│   ├── cli/
+│   │   ├── pyproject.toml  # package config, dependencies, entry points
+│   │   ├── src/yt/
+│   │   │   ├── main.py     # CLI entry point and commands
+│   │   │   ├── transcript.py
+│   │   │   ├── summarizer.py
+│   │   │   ├── storage.py
+│   │   │   ├── config.py
+│   │   │   ├── cloud.py
+│   │   │   ├── server.py
+│   │   │   └── web/dist/   # pre-built local viewer (committed)
+│   │   └── tests/          # Python CLI tests
+│   ├── web/                # Cloud web app (React/Vite/shadcn + Convex + Clerk)
+│   │   └── convex/         # Convex cloud backend
+│   └── web-local/          # Local viewer source (builds to apps/cli/src/yt/web/dist/)
+├── package.json
+├── pnpm-workspace.yaml
+└── pnpm-lock.yaml
 ```
 
 ## How it works
@@ -277,7 +284,7 @@ tube/
 2. Create a feature branch (`git checkout -b my-feature`)
 3. Set up the development environment (see [Development setup](#development-setup))
 4. Make your changes
-5. Run `pytest -v` to make sure all tests pass
+5. Run `pnpm cli:test` to make sure all Python tests pass
 6. Commit your changes (`git commit -m "Add my feature"`)
 7. Push to your branch (`git push origin my-feature`)
 8. Open a pull request

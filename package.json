@@ -3,6 +3,10 @@
   "private": true,
   "packageManager": "pnpm@10.28.0",
   "scripts": {
+    "cli:test": "cd apps/cli && pytest -v",
+    "convex:dev": "pnpm --filter web convex:dev",
+    "convex:deploy": "pnpm --filter web convex:deploy",
+    "convex:skills": "pnpm --filter web convex:skills",
     "web:build": "pnpm --filter web build",
     "web:dev": "pnpm --filter web dev",
     "web:lint": "pnpm --filter web lint",

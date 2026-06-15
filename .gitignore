@@ -1,9 +1,11 @@
 # Python
-__pycache__/
+**/__pycache__/
 *.py[cod]
 *.egg-info/
-/dist/
-build/
+.pytest_cache/
+**/*.egg-info/
+**/dist/
+**/build/
 *.egg
 
 # Environment
@@ -11,11 +13,10 @@ build/
 .env*
 !.env.example
 !.env.local.example
+.claude/settings.local.json
 
 # OS
 .DS_Store
 
 # Frontend
-/node_modules/
-web/node_modules/
-web-local/node_modules/
+**/node_modules/
