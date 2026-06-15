@@ -1,16 +1,27 @@
+import type { Id } from "../../convex/_generated/dataModel"
+
 export interface VideoSummary {
+  _id: Id<"videos">
+  _creationTime: number
+  videoId: string
   date: string
-  video_id: string
   title: string
-  has_summary: boolean
-  thumbnail_url: string
+  hasSummary: boolean
+  thumbnailUrl: string
 }
 
 export interface VideoDetail {
+  _id: Id<"videos">
+  videoId: string
   date: string
-  video_id: string
   title: string
-  summary_md: string | null
-  transcript_md: string | null
-  thumbnail_url: string
+  summaryMd: string | null
+  transcriptMd: string
+  thumbnailUrl: string
+}
+
+export interface ApiKey {
+  _id: Id<"apiKeys">
+  _creationTime: number
+  name: string
 }

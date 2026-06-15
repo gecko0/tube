@@ -6,6 +6,7 @@ Fetch YouTube video transcripts and summarize them with Claude, all from the ter
 
 - **Python 3.9+** — check with `python3 --version`
 - **uv** — fast Python package manager ([install guide](https://docs.astral.sh/uv/getting-started/installation/))
+- **pnpm** — JavaScript package manager for the web workspaces
 - **Claude Code** — required for summarization ([install guide](https://docs.anthropic.com/en/docs/claude-code))
 
 ## Setup
@@ -63,6 +64,8 @@ Usage: yt [ARGS]...
     yt summary, yt s [ref]    View summary (latest if no ref)
     yt delete,  yt d [ref]    Delete transcript & summary (latest if no ref)
     yt web,     yt w [port]   Open web viewer (default port 8765)
+    yt connect  <key>         Connect to cloud with API key
+    yt disconnect             Remove cloud connection
     yt setup-shell            Configure shell aliases for URLs
 
   [ref] can be a # index from the list or a video ID.
@@ -75,6 +78,16 @@ Options:
 
 ```bash
 uv tool uninstall yt-cli
+```
+
+### Web development
+
+The React apps use a pnpm workspace from the repository root:
+
+```bash
+pnpm install
+pnpm --filter web-local build
+pnpm --filter web build
 ```
 
 ### Development setup
@@ -148,6 +161,23 @@ yt w 9000      # custom port
 
 This starts a local web server and opens a browser-based viewer with a sidebar of all saved videos, embedded YouTube player, and rendered summaries/transcripts.
 
+### Cloud sync
+
+Connect to the cloud backend to access your transcripts from anywhere:
+
+```bash
+# 1. Sign in at the web app and generate an API key in Settings
+# 2. Connect your CLI
+yt connect <your-api-key>
+
+# Now every `yt <url>` will automatically sync to the cloud
+
+# To disconnect
+yt disconnect
+```
+
+When connected, `yt <url>` saves locally as usual and also uploads to the Convex cloud backend. If the upload fails, the CLI warns but doesn't block.
+
 ### Interactive mode
 
 Run `yt` with no arguments to get a menu:
@@ -218,9 +248,12 @@ tube/
 │   ├── summarizer.py       # call claude -p for summarization
 │   ├── storage.py          # list, read, find saved folders
 │   ├── config.py           # paths and constants
+│   ├── cloud.py            # cloud sync config and upload
 │   ├── server.py           # FastAPI web server for browser UI
 │   └── web/dist/           # pre-built React frontend (committed)
-├── web/                    # React/Vite/shadcn frontend source
+├── convex/                 # Convex cloud backend
+├── web/                    # Cloud web app (React/Vite/shadcn + Convex + Clerk)
+├── web-local/              # Local web viewer source (builds to yt/web/dist/)
 └── tests/
     ├── conftest.py         # shared test fixtures
     ├── test_transcript.py

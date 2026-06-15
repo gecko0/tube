@@ -1,4 +1,6 @@
 import { formatDate } from "@/lib/utils"
+import { UserButton } from "@clerk/react"
+import { Settings } from "lucide-react"
 import { ThemeSwitcher } from "@/components/theme-switcher"
 import {
   Sidebar,
@@ -16,6 +18,7 @@ interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   videos: VideoSummary[]
   selectedVideoId: string | null
   onSelectVideo: (videoId: string) => void
+  onOpenSettings: () => void
   loading: boolean
 }
 
@@ -23,6 +26,7 @@ export function AppSidebar({
   videos,
   selectedVideoId,
   onSelectVideo,
+  onOpenSettings,
   loading,
   ...props
 }: AppSidebarProps) {
@@ -46,15 +50,15 @@ export function AppSidebar({
                 </SidebarMenuItem>
               ) : (
                 videos.map((video) => (
-                  <SidebarMenuItem key={video.video_id}>
+                  <SidebarMenuItem key={video.videoId}>
                     <SidebarMenuButton
-                      isActive={selectedVideoId === video.video_id}
-                      onClick={() => onSelectVideo(video.video_id)}
+                      isActive={selectedVideoId === video.videoId}
+                      onClick={() => onSelectVideo(video.videoId)}
                       className="h-auto py-2"
                     >
                       <div className="flex items-start gap-3 w-full">
                         <img
-                          src={video.thumbnail_url}
+                          src={video.thumbnailUrl}
                           alt=""
                           className="w-20 min-w-20 rounded-sm object-cover aspect-video"
                         />
@@ -76,6 +80,16 @@ export function AppSidebar({
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
+        <div className="flex items-center gap-2 px-2 py-1">
+          <UserButton />
+          <button
+            onClick={onOpenSettings}
+            className="ml-auto rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            title="Settings"
+          >
+            <Settings className="size-4" />
+          </button>
+        </div>
         <ThemeSwitcher />
       </SidebarFooter>
     </Sidebar>

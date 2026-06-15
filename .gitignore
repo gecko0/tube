@@ -8,10 +8,14 @@ build/
 
 # Environment
 .venv/
-.env
+.env*
+!.env.example
+!.env.local.example
 
 # OS
 .DS_Store
 
 # Frontend
+/node_modules/
 web/node_modules/
+web-local/node_modules/

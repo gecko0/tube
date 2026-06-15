@@ -10,6 +10,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
+from .cloud import is_connected, load_config, save_config, upload_video
 from .server import run_server
 from .storage import find_by_video_id, list_transcripts, parse_folder_name, read_summary, read_transcript
 from .summarizer import save_summary, summarize
@@ -101,6 +102,23 @@ def add_video(url: str, regenerate: bool = False):
 
     save_summary(folder, summary_text, title, video_id)
     console.print("[green]Summary saved.[/green]")
+
+    # Upload to cloud if connected
+    if is_connected():
+        parsed = parse_folder_name(folder.name)
+        date = parsed["date"] if parsed else ""
+        success = upload_video(
+            video_id=video_id,
+            date=date,
+            title=title,
+            transcript_md=transcript_text,
+            summary_md=summary_text,
+        )
+        if success:
+            console.print("[dim]Synced to cloud.[/dim]")
+        else:
+            console.print("[yellow]Warning: cloud sync failed.[/yellow]")
+
     console.print()
     console.print(Markdown(summary_text))
     console.print(f"\n[bold green]Done![/bold green] {folder}")
@@ -270,6 +288,8 @@ def cli(args):
       yt summary, yt s [ref]    View summary (latest if no ref)
       yt delete,  yt d [ref]    Delete transcript & summary (latest if no ref)
       yt web,     yt w [port]   Open web viewer (default port 8765)
+      yt connect  <key>         Connect to cloud with API key
+      yt disconnect             Remove cloud connection
       yt setup-shell            Configure shell aliases for URLs
 
     [ref] can be a # index from the list or a video ID.
@@ -294,6 +314,19 @@ def cli(args):
     elif cmd in ("w", "web"):
         port = int(ref) if ref else 8765
         run_server(port)
+    elif cmd in ("c", "connect"):
+        if ref is None:
+            console.print("[red]Usage: yt connect <api-key>[/red]")
+            sys.exit(1)
+        config = load_config()
+        config["api_key"] = ref
+        save_config(config)
+        console.print("[green]Connected![/green] API key saved to ~/.yt/config.json")
+    elif cmd == "disconnect":
+        config = load_config()
+        config.pop("api_key", None)
+        save_config(config)
+        console.print("[green]Disconnected.[/green] API key removed.")
     elif cmd == "setup-shell":
         setup_shell()
     else:

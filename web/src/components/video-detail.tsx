@@ -16,7 +16,7 @@ export function VideoDetail({ detail }: VideoDetailProps) {
       {/* Embedded YouTube player */}
       <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-muted">
         <iframe
-          src={`https://www.youtube.com/embed/${detail.video_id}`}
+          src={`https://www.youtube.com/embed/${detail.videoId}`}
           title={detail.title}
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowFullScreen
@@ -28,7 +28,7 @@ export function VideoDetail({ detail }: VideoDetailProps) {
       <div>
         <h1 className="text-xl font-semibold">
           <a
-            href={`https://www.youtube.com/watch?v=${detail.video_id}`}
+            href={`https://www.youtube.com/watch?v=${detail.videoId}`}
             target="_blank"
             rel="noopener noreferrer"
             className="hover:underline"
@@ -44,28 +44,28 @@ export function VideoDetail({ detail }: VideoDetailProps) {
       <Separator />
 
       {/* Tabs */}
-      <Tabs defaultValue={detail.summary_md ? "summary" : "transcript"}>
+      <Tabs defaultValue={detail.summaryMd ? "summary" : "transcript"}>
         <TabsList>
-          <TabsTrigger value="summary" disabled={!detail.summary_md}>
+          <TabsTrigger value="summary" disabled={!detail.summaryMd}>
             Summary
           </TabsTrigger>
-          <TabsTrigger value="transcript" disabled={!detail.transcript_md}>
+          <TabsTrigger value="transcript" disabled={!detail.transcriptMd}>
             Transcript
           </TabsTrigger>
         </TabsList>
         <TabsContent value="summary" className="mt-4">
-          {detail.summary_md ? (
+          {detail.summaryMd ? (
             <Streamdown plugins={{ code }}>
-              {detail.summary_md}
+              {detail.summaryMd}
             </Streamdown>
           ) : (
             <p className="text-muted-foreground">No summary available.</p>
           )}
         </TabsContent>
         <TabsContent value="transcript" className="mt-4">
-          {detail.transcript_md ? (
+          {detail.transcriptMd ? (
             <Streamdown plugins={{ code }}>
-              {detail.transcript_md}
+              {detail.transcriptMd}
             </Streamdown>
           ) : (
             <p className="text-muted-foreground">No transcript available.</p>

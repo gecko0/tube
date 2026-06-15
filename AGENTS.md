@@ -2,7 +2,7 @@
 
 ## Project overview
 
-`yt` (also aliased as `tube`) is a CLI tool that fetches YouTube video transcripts and summarizes them using Claude. It stores transcripts and summaries as markdown files on disk.
+`yt` (also aliased as `tube`) is a CLI tool that fetches YouTube video transcripts and summarizes them using Claude. It stores transcripts and summaries as markdown files on disk and optionally syncs them to a Convex cloud backend for remote access.
 
 ## Tech stack
 
@@ -12,8 +12,11 @@
 - requests (HTTP)
 - youtube-transcript-api (transcript fetching)
 - Claude CLI (`claude -p`) for summarization (external subprocess)
-- FastAPI + Uvicorn (web viewer backend)
-- React 19 + Vite + shadcn/ui + Tailwind CSS v4 (web viewer frontend)
+- FastAPI + Uvicorn (local web viewer backend)
+- React 19 + Vite + shadcn/ui + Tailwind CSS v4 (local web viewer frontend)
+- Convex (cloud backend — schema, functions, HTTP endpoints)
+- Clerk (authentication for cloud web app)
+- React 19 + Vite + shadcn/ui + Convex + Clerk (cloud web app frontend)
 
 ## Project structure
 
@@ -24,9 +27,18 @@ yt/
 ├── storage.py      # Listing, finding, reading saved transcripts and summaries
 ├── summarizer.py   # Claude-based summarization, summary markdown building, saving
 ├── server.py       # FastAPI web server, API routes, static file serving
+├── cloud.py        # Cloud sync: config management, upload to Convex
 ├── main.py         # CLI entry point (Click commands, interactive mode)
 ├── web/dist/       # Pre-built React frontend (committed, no Node.js at runtime)
-web/                # React/Vite/shadcn frontend source (not part of Python package)
+convex/             # Convex cloud backend (see convex_rules.md for conventions)
+├── schema.ts       # Table definitions (videos, apiKeys)
+├── videos.ts       # Public queries/mutations for videos (Clerk auth)
+├── apiKeys.ts      # API key CRUD (Clerk auth)
+├── http.ts         # HTTP endpoint for CLI upload (API key auth)
+├── auth.ts         # Internal helpers (resolve API key, upsert video)
+├── auth.config.ts  # Clerk JWT provider config
+web/                # Cloud web app (React/Vite/shadcn + Convex + Clerk)
+web-local/          # Local web viewer source (builds to yt/web/dist/)
 tests/
 ├── conftest.py     # Shared fixtures: frozen_date, transcripts_dir, sample_entries
 ├── test_main.py
@@ -34,13 +46,17 @@ tests/
 ├── test_storage.py
 ├── test_summarizer.py
 ├── test_server.py
+├── test_cloud.py
 ```
 
 ## Setup
 
 ```bash
 pip install -e ".[dev]"
+pnpm install
 ```
+
+The JavaScript apps are managed with pnpm workspaces from the repository root. Use `pnpm --filter web-local ...` for the local viewer source and `pnpm --filter web ...` for the cloud web app.
 
 ## Testing
 
@@ -80,4 +96,15 @@ When changing CLI commands, flags, output format, or user-facing behavior, updat
 - `summarize()` shells out to `claude -p <prompt>` and checks for the binary via `shutil.which` first.
 - `fetch_metadata` uses YouTube's oEmbed endpoint and falls back to `{"title": video_id, "author": "Unknown"}` on any error.
 - `yt web` starts a FastAPI/Uvicorn server serving both a JSON API and the pre-built React SPA from `yt/web/dist/`.
-- The React frontend source lives in `web/` (project root) and builds to `yt/web/dist/`. The built files are committed so users don't need Node.js at runtime.
+- The local React frontend source lives in `web-local/` and builds to `yt/web/dist/`. The built files are committed so users don't need Node.js at runtime.
+- The cloud web app lives in `web/` and uses Convex + Clerk for backend and auth.
+- `yt/cloud.py` manages cloud config (`~/.yt/config.json`) and uploads to Convex via HTTP endpoint.
+- `yt connect <key>` stores an API key for cloud sync. `yt disconnect` removes it.
+- After `add_video`, if connected, the CLI automatically uploads to Convex (non-blocking, warns on failure).
+
+## Convex backend
+
+- Backend functions live in `convex/`. Follow conventions in `convex_rules.md`.
+- Schema is in `convex/schema.ts` with `videos` and `apiKeys` tables, all user-scoped.
+- HTTP endpoint at `/api/upload` authenticates CLI via API key (SHA-256 hash lookup).
+- Auth uses Clerk for the web app and API keys for the CLI.
