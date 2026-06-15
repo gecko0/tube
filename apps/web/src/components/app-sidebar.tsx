@@ -1,7 +1,5 @@
 import { formatDate } from "@/lib/utils"
-import { UserButton } from "@clerk/react"
-import { Settings } from "lucide-react"
-import { ThemeSwitcher } from "@/components/theme-switcher"
+import { NavUser } from "@/components/nav-user"
 import {
   Sidebar,
   SidebarContent,
@@ -18,7 +16,6 @@ interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   videos: VideoSummary[]
   selectedVideoId: string | null
   onSelectVideo: (videoId: string) => void
-  onOpenSettings: () => void
   loading: boolean
 }
 
@@ -26,7 +23,6 @@ export function AppSidebar({
   videos,
   selectedVideoId,
   onSelectVideo,
-  onOpenSettings,
   loading,
   ...props
 }: AppSidebarProps) {
@@ -80,17 +76,7 @@ export function AppSidebar({
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <div className="flex items-center gap-2 px-2 py-1">
-          <UserButton />
-          <button
-            onClick={onOpenSettings}
-            className="ml-auto rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-            title="Settings"
-          >
-            <Settings className="size-4" />
-          </button>
-        </div>
-        <ThemeSwitcher />
+        <NavUser />
       </SidebarFooter>
     </Sidebar>
   )

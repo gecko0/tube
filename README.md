@@ -96,6 +96,23 @@ Convex lives with the cloud web app. To install Convex's agent skills, run:
 pnpm convex:skills
 ```
 
+To run the cloud web app with Clerk auth, open
+https://dashboard.clerk.com/apps/setup/convex and activate Clerk's Convex
+integration for your Clerk app. The integration creates the `convex` JWT token
+endpoint used by `ConvexProviderWithClerk`; without it, the browser will get a
+404 from Clerk for `/tokens/convex` and Convex queries will fail as
+unauthenticated.
+If sign-in appears to succeed but the app cannot load data, check this setup
+before debugging application queries.
+
+Then copy Clerk's Frontend API URL, for example
+`https://verb-noun-00.clerk.accounts.dev`, and set it on the matching Convex
+deployment:
+
+```bash
+pnpm --filter web exec convex env set CLERK_JWT_ISSUER_DOMAIN https://verb-noun-00.clerk.accounts.dev
+```
+
 ### Development setup
 
 If you want to contribute or modify the code:
