@@ -1,5 +1,7 @@
 import type { Id } from "../../convex/_generated/dataModel"
 
+export type VideoView = "active" | "archived"
+
 export interface VideoSummary {
   _id: Id<"videos">
   _creationTime: number
@@ -8,6 +10,7 @@ export interface VideoSummary {
   title: string
   hasSummary: boolean
   thumbnailUrl: string
+  archivedAt?: number
 }
 
 export interface VideoDetail {
@@ -18,6 +21,7 @@ export interface VideoDetail {
   summaryMd: string | null
   transcriptMd: string
   thumbnailUrl: string
+  archivedAt?: number
 }
 
 export interface ApiKey {

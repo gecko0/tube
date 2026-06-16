@@ -10,9 +10,11 @@ export default defineSchema({
     transcriptMd: v.string(),
     summaryMd: v.optional(v.string()),
     thumbnailUrl: v.string(),
+    archivedAt: v.optional(v.number()),
   })
     .index("by_userId", ["userId"])
-    .index("by_userId_and_videoId", ["userId", "videoId"]),
+    .index("by_userId_and_videoId", ["userId", "videoId"])
+    .index("by_userId_and_archivedAt", ["userId", "archivedAt"]),
 
   apiKeys: defineTable({
     userId: v.string(),

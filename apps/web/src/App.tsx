@@ -7,7 +7,7 @@ import {
   usePaginatedQuery,
 } from "convex/react"
 import { api } from "../convex/_generated/api"
-import { Ellipsis, Trash2 } from "lucide-react"
+import { Archive, ArchiveRestore, Ellipsis, Trash2 } from "lucide-react"
 import { AppSidebar } from "@/components/app-sidebar"
 import { ThemeProvider } from "@/components/theme-provider"
 import { VideoDetail } from "@/components/video-detail"
@@ -23,6 +23,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -35,6 +36,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import type { VideoView } from "@/lib/types"
 
 function getVideoIdFromPath() {
   const match = window.location.pathname.match(/^\/video\/([a-zA-Z0-9_-]+)/)
@@ -42,13 +44,14 @@ function getVideoIdFromPath() {
 }
 
 function AuthenticatedApp() {
+  const [videoView, setVideoView] = useState<VideoView>("active")
   const {
     results: videos,
     status: videosStatus,
     loadMore: loadMoreVideos,
   } = usePaginatedQuery(
     api.videos.listPage,
-    {},
+    { view: videoView },
     { initialNumItems: 100 }
   )
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(getVideoIdFromPath)
@@ -56,6 +59,8 @@ function AuthenticatedApp() {
     api.videos.get,
     selectedVideoId ? { videoId: selectedVideoId } : "skip"
   )
+  const archiveVideo = useMutation(api.videos.archive)
+  const unarchiveVideo = useMutation(api.videos.unarchive)
   const removeVideo = useMutation(api.videos.remove)
   const [alertOpen, setAlertOpen] = useState(false)
 
@@ -73,10 +78,47 @@ function AuthenticatedApp() {
     loadMoreVideos(100)
   }, [loadMoreVideos])
 
+  const clearSelection = useCallback(() => {
+    setSelectedVideoId(null)
+    window.history.pushState(null, "", "/")
+  }, [])
+
+  const selectNextVisibleVideo = useCallback((videoId: string) => {
+    const currentIndex = sortedVideos.findIndex((video) => video.videoId === videoId)
+    const fallback =
+      sortedVideos[currentIndex + 1] ??
+      sortedVideos[currentIndex - 1] ??
+      sortedVideos.find((video) => video.videoId !== videoId)
+
+    if (fallback && fallback.videoId !== videoId) {
+      selectVideo(fallback.videoId)
+    } else {
+      clearSelection()
+    }
+  }, [clearSelection, selectVideo, sortedVideos])
+
+  const handleViewChange = useCallback((view: VideoView) => {
+    if (view === videoView) return
+    setVideoView(view)
+    clearSelection()
+  }, [clearSelection, videoView])
+
+  const handleArchiveToggle = useCallback(async () => {
+    if (!selectedVideoId || !detail) return
+
+    if (detail.archivedAt === undefined) {
+      await archiveVideo({ videoId: selectedVideoId })
+    } else {
+      await unarchiveVideo({ videoId: selectedVideoId })
+    }
+    selectNextVisibleVideo(selectedVideoId)
+  }, [archiveVideo, detail, selectedVideoId, selectNextVisibleVideo, unarchiveVideo])
+
   const handleDelete = useCallback(async () => {
     if (!selectedVideoId) return
     await removeVideo({ videoId: selectedVideoId })
-  }, [selectedVideoId, removeVideo])
+    selectNextVisibleVideo(selectedVideoId)
+  }, [selectedVideoId, removeVideo, selectNextVisibleVideo])
 
   // After videos update, if selected video is gone, pick next one
   useEffect(() => {
@@ -112,8 +154,10 @@ function AuthenticatedApp() {
     <SidebarProvider>
       <AppSidebar
         videos={sortedVideos}
+        view={videoView}
         selectedVideoId={selectedVideoId}
         onSelectVideo={selectVideo}
+        onViewChange={handleViewChange}
         loading={loading}
         canLoadMore={canLoadMoreVideos}
         loadingMore={loadingMoreVideos}
@@ -134,6 +178,20 @@ function AuthenticatedApp() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={handleArchiveToggle}>
+                  {detail.archivedAt === undefined ? (
+                    <>
+                      <Archive />
+                      Archive
+                    </>
+                  ) : (
+                    <>
+                      <ArchiveRestore />
+                      Unarchive
+                    </>
+                  )}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem
                   variant="destructive"
                   onSelect={() => setAlertOpen(true)}
