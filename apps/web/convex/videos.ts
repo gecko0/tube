@@ -1,37 +1,30 @@
 import { query, mutation } from "./_generated/server";
+import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 
-export const list = query({
-  args: {},
-  returns: v.array(
-    v.object({
-      _id: v.id("videos"),
-      _creationTime: v.number(),
-      videoId: v.string(),
-      date: v.string(),
-      title: v.string(),
-      hasSummary: v.boolean(),
-      thumbnailUrl: v.string(),
-    })
-  ),
-  handler: async (ctx) => {
+export const listPage = query({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
     const userId = identity.subject;
-    const videos = await ctx.db
+    const results = await ctx.db
       .query("videos")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
       .order("desc")
-      .collect();
-    return videos.map((video) => ({
-      _id: video._id,
-      _creationTime: video._creationTime,
-      videoId: video.videoId,
-      date: video.date,
-      title: video.title,
-      hasSummary: video.summaryMd !== undefined,
-      thumbnailUrl: video.thumbnailUrl,
-    }));
+      .paginate(args.paginationOpts);
+    return {
+      ...results,
+      page: results.page.map((video) => ({
+        _id: video._id,
+        _creationTime: video._creationTime,
+        videoId: video.videoId,
+        date: video.date,
+        title: video.title,
+        hasSummary: video.summaryMd !== undefined,
+        thumbnailUrl: video.thumbnailUrl,
+      })),
+    };
   },
 });
 

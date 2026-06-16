@@ -207,6 +207,12 @@ class TestConnectDisconnect:
 # CLI sync command
 # ---------------------------------------------------------------------------
 class TestSync:
+    def make_transcripts(self, transcripts_dir, count):
+        for i in range(1, count + 1):
+            folder = transcripts_dir / f"2025-06-15T{i:06d} - vid{i:08d} - Title {i}"
+            folder.mkdir()
+            (folder / "transcript.md").write_text(f"# Transcript {i}", encoding="utf-8")
+
     def test_sync_requires_connection(self, config_path):
         from click.testing import CliRunner
 
@@ -243,7 +249,7 @@ class TestSync:
 
         assert result.exit_code == 0
         assert "Uploaded 1 missing video" in result.output
-        mock_missing.assert_called_once_with(["localonly01", "synced00002"])
+        mock_missing.assert_called_once_with(["synced00002", "localonly01"])
         mock_upload.assert_called_once_with(
             video_id="localonly01",
             date="2025-06-15",
@@ -251,3 +257,50 @@ class TestSync:
             transcript_md="# Local transcript",
             summary_md="# Local summary",
         )
+
+    def test_sync_defaults_to_latest_100(self, config_path, transcripts_dir):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        save_config({"api_key": "my-key"})
+        self.make_transcripts(transcripts_dir, 105)
+
+        runner = CliRunner()
+        with patch("yt.main.get_missing_video_ids", return_value=[]) as mock_missing:
+            result = runner.invoke(cli, ["sync"])
+
+        assert result.exit_code == 0
+        expected_ids = [f"vid{i:08d}" for i in range(105, 5, -1)]
+        mock_missing.assert_called_once_with(expected_ids)
+
+    def test_sync_limit(self, config_path, transcripts_dir):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        save_config({"api_key": "my-key"})
+        self.make_transcripts(transcripts_dir, 5)
+
+        runner = CliRunner()
+        with patch("yt.main.get_missing_video_ids", return_value=[]) as mock_missing:
+            result = runner.invoke(cli, ["sync", "--limit", "3"])
+
+        assert result.exit_code == 0
+        mock_missing.assert_called_once_with(["vid00000005", "vid00000004", "vid00000003"])
+
+    def test_sync_all(self, config_path, transcripts_dir):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        save_config({"api_key": "my-key"})
+        self.make_transcripts(transcripts_dir, 105)
+
+        runner = CliRunner()
+        with patch("yt.main.get_missing_video_ids", return_value=[]) as mock_missing:
+            result = runner.invoke(cli, ["sync", "--all"])
+
+        assert result.exit_code == 0
+        expected_ids = [f"vid{i:08d}" for i in range(105, 0, -1)]
+        mock_missing.assert_called_once_with(expected_ids)

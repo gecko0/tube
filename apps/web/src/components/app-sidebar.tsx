@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react"
 import { formatDate } from "@/lib/utils"
 import { NavUser } from "@/components/nav-user"
 import {
@@ -17,6 +18,9 @@ interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   selectedVideoId: string | null
   onSelectVideo: (videoId: string) => void
   loading: boolean
+  canLoadMore: boolean
+  loadingMore: boolean
+  onLoadMore: () => void
 }
 
 export function AppSidebar({
@@ -24,8 +28,31 @@ export function AppSidebar({
   selectedVideoId,
   onSelectVideo,
   loading,
+  canLoadMore,
+  loadingMore,
+  onLoadMore,
   ...props
 }: AppSidebarProps) {
+  const sentinelRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!canLoadMore || loadingMore) return
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          onLoadMore()
+        }
+      },
+      { rootMargin: "200px" }
+    )
+
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [canLoadMore, loadingMore, onLoadMore])
+
   return (
     <Sidebar variant="inset" {...props}>
       <SidebarContent>
@@ -71,7 +98,17 @@ export function AppSidebar({
                   </SidebarMenuItem>
                 ))
               )}
+              {!loading && loadingMore && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton disabled>
+                    <span className="text-muted-foreground">Loading...</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
+            {!loading && canLoadMore && (
+              <div ref={sentinelRef} className="h-1" aria-hidden="true" />
+            )}
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>

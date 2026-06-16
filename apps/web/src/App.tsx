@@ -4,6 +4,7 @@ import {
   useMutation,
   useConvexAuth,
   useQuery,
+  usePaginatedQuery,
 } from "convex/react"
 import { api } from "../convex/_generated/api"
 import { Ellipsis, Trash2 } from "lucide-react"
@@ -41,7 +42,15 @@ function getVideoIdFromPath() {
 }
 
 function AuthenticatedApp() {
-  const videos = useQuery(api.videos.list)
+  const {
+    results: videos,
+    status: videosStatus,
+    loadMore: loadMoreVideos,
+  } = usePaginatedQuery(
+    api.videos.listPage,
+    {},
+    { initialNumItems: 100 }
+  )
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(getVideoIdFromPath)
   const detail = useQuery(
     api.videos.get,
@@ -50,13 +59,19 @@ function AuthenticatedApp() {
   const removeVideo = useMutation(api.videos.remove)
   const [alertOpen, setAlertOpen] = useState(false)
 
-  const loading = videos === undefined
+  const loading = videosStatus === "LoadingFirstPage"
+  const canLoadMoreVideos = videosStatus === "CanLoadMore"
+  const loadingMoreVideos = videosStatus === "LoadingMore"
   const sortedVideos = useMemo(() => videos ? [...videos] : [], [videos])
 
   const selectVideo = useCallback((videoId: string) => {
     setSelectedVideoId(videoId)
     window.history.pushState(null, "", `/video/${videoId}`)
   }, [])
+
+  const loadMoreNextVideos = useCallback(() => {
+    loadMoreVideos(100)
+  }, [loadMoreVideos])
 
   const handleDelete = useCallback(async () => {
     if (!selectedVideoId) return
@@ -65,9 +80,9 @@ function AuthenticatedApp() {
 
   // After videos update, if selected video is gone, pick next one
   useEffect(() => {
-    if (!selectedVideoId || loading) return
+    if (!selectedVideoId || loading || detail === undefined) return
     const stillExists = sortedVideos.some((v) => v.videoId === selectedVideoId)
-    if (!stillExists) {
+    if (!stillExists && detail === null) {
       if (sortedVideos.length > 0) {
         selectVideo(sortedVideos[0].videoId)
       } else {
@@ -75,7 +90,7 @@ function AuthenticatedApp() {
         window.history.pushState(null, "", "/")
       }
     }
-  }, [sortedVideos, selectedVideoId, loading, selectVideo])
+  }, [sortedVideos, selectedVideoId, loading, detail, selectVideo])
 
   // Handle browser back/forward
   useEffect(() => {
@@ -100,6 +115,9 @@ function AuthenticatedApp() {
         selectedVideoId={selectedVideoId}
         onSelectVideo={selectVideo}
         loading={loading}
+        canLoadMore={canLoadMoreVideos}
+        loadingMore={loadingMoreVideos}
+        onLoadMore={loadMoreNextVideos}
       />
       <SidebarInset>
         <header className="flex h-12 shrink-0 items-center gap-2 overflow-hidden border-b px-4">

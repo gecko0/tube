@@ -59,17 +59,21 @@ Usage: yt [ARGS]...
   Commands:
     yt                        Interactive mode
     yt <url>                  Fetch transcript & summarize a video
-    yt list,    yt l          List all saved transcripts
-    yt view,    yt v [ref]    View transcript (latest if no ref)
-    yt summary, yt s [ref]    View summary (latest if no ref)
-    yt delete,  yt d [ref]    Delete transcript & summary (latest if no ref)
+    yt list,    yt l          List latest 100 saved transcripts
+    yt list --all             List all saved transcripts
+    yt list --limit N         List latest N saved transcripts
+    yt view,    yt v [video_id]    View transcript (latest if omitted)
+    yt summary, yt s [video_id]    View summary (latest if omitted)
+    yt delete,  yt d [video_id]    Delete transcript & summary (latest if omitted)
     yt web,     yt w [port]   Open web viewer (default port 8765)
     yt connect  <key>         Connect to cloud with API key
-    yt sync                   Upload local videos missing from cloud
+    yt sync                   Upload latest 100 local videos missing from cloud
+    yt sync --all             Upload all local videos missing from cloud
+    yt sync --limit N         Upload latest N local videos missing from cloud
     yt disconnect             Remove cloud connection
     yt setup-shell            Configure shell aliases for URLs
 
-  [ref] can be a # index from the list or a video ID.
+  [video_id] is a YouTube video ID.
 
 Options:
   -h, --help  Show this message and exit.
@@ -148,14 +152,15 @@ If the video was already fetched, you'll be asked whether to skip or regenerate.
 ### List saved transcripts
 
 ```bash
-yt list        # or: yt l
+yt list             # latest 100, or: yt l
+yt list --limit 25  # latest 25
+yt list --all       # all saved transcripts
 ```
 
 ### View a transcript
 
 ```bash
 yt view        # latest transcript
-yt v 3         # transcript #3 from the list
 yt v dQw4w9WgXcQ   # by video ID
 ```
 
@@ -163,7 +168,6 @@ yt v dQw4w9WgXcQ   # by video ID
 
 ```bash
 yt summary     # latest summary
-yt s 3         # summary #3 from the list
 yt s dQw4w9WgXcQ   # by video ID
 ```
 
@@ -171,7 +175,6 @@ yt s dQw4w9WgXcQ   # by video ID
 
 ```bash
 yt delete      # delete the latest transcript
-yt d 3         # delete transcript #3 from the list
 yt d dQw4w9WgXcQ   # by video ID
 ```
 
@@ -197,8 +200,12 @@ yt connect <your-api-key>
 
 # Now every `yt <url>` will automatically sync to the cloud
 
-# Upload existing local transcripts that are missing from the cloud
+# Upload the latest 100 local transcripts that are missing from the cloud
 yt sync
+
+# Override the default sync scope
+yt sync --limit 250
+yt sync --all
 
 # To disconnect
 yt disconnect
@@ -206,7 +213,7 @@ yt disconnect
 
 When connected, `yt <url>` saves locally as usual and also uploads to the Convex cloud backend. If the upload fails, the CLI warns but doesn't block.
 
-Run `yt sync` after connecting a new API key to backfill existing local transcripts. The command asks Convex which local video IDs are missing and uploads only those videos.
+Run `yt sync` after connecting a new API key to backfill recent local transcripts. By default it checks the latest 100 local videos. Use `yt sync --all` for a full backfill. The command asks Convex which local video IDs are missing and uploads only those videos.
 
 ### Interactive mode
 
@@ -219,14 +226,15 @@ Run `yt` with no arguments to get a menu:
 
 [1] Add new video
 [2] List transcripts
-[3] View transcript  (3 <#|id>)
-[4] View summary     (4 <#|id>)
+[3] View transcript  (3 <video_id>)
+[4] View summary     (4 <video_id>)
 [5] Open web viewer
-[6] Delete transcript (6 <#|id>)
-[7] Exit
+[6] Delete transcript (6 <video_id>)
+[7] Sync missing videos
+[8] Exit
 ```
 
-In interactive mode you can combine action and reference in one input, e.g. `4 1` to view the summary of transcript #1.
+In interactive mode you can combine action and reference in one input, e.g. `4 dQw4w9WgXcQ` to view a summary by video ID.
 
 ## Where files are stored
 

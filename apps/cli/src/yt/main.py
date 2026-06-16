@@ -29,26 +29,57 @@ from .summarizer import save_summary, summarize
 from .transcript import extract_video_id, fetch_metadata, fetch_transcript, save_transcript
 
 console = Console()
+DEFAULT_BATCH_SIZE = 100
+
+
+def parse_batch_options(
+    parts: tuple[str, ...] | list[str], command: str, default_limit: int
+) -> int | None:
+    """Parse --limit N and --all for list-like commands."""
+    limit: int | None = default_limit
+    saw_all = False
+    saw_limit = False
+    i = 0
+    while i < len(parts):
+        part = parts[i]
+        if part == "--all":
+            if saw_limit:
+                console.print(f"[red]Usage:[/red] {command} [--limit N | --all]")
+                sys.exit(1)
+            saw_all = True
+            limit = None
+            i += 1
+        elif part == "--limit":
+            if saw_all or i + 1 >= len(parts):
+                console.print(f"[red]Usage:[/red] {command} [--limit N | --all]")
+                sys.exit(1)
+            try:
+                parsed_limit = int(parts[i + 1])
+            except ValueError:
+                console.print("[red]--limit must be a positive integer.[/red]")
+                sys.exit(1)
+            if parsed_limit < 1:
+                console.print("[red]--limit must be a positive integer.[/red]")
+                sys.exit(1)
+            saw_limit = True
+            limit = parsed_limit
+            i += 2
+        else:
+            console.print(f"[red]Unknown option for {command}:[/red] {part}")
+            console.print(f"[red]Usage:[/red] {command} [--limit N | --all]")
+            sys.exit(1)
+    return limit
 
 
 def resolve_ref(ref: str | None) -> tuple[Path, str]:
-    """Resolve a reference (index number, video ID, or None for latest) to a (folder, video_id) tuple."""
-    transcripts = list_transcripts()
+    """Resolve a video ID or None for latest to a (folder, video_id) tuple."""
 
     if ref is None:
-        # Default to latest (last item, since list is ascending)
+        transcripts = list_transcripts(limit=1, newest_first=True)
         if not transcripts:
             console.print("[red]No transcripts saved yet.[/red]")
             sys.exit(1)
-        entry = transcripts[-1]
-        return entry["folder"], entry["video_id"]
-
-    if ref.isdigit():
-        index = int(ref)
-        if index < 1 or index > len(transcripts):
-            console.print(f"[red]Invalid index: {ref}[/red] (have {len(transcripts)} transcripts)")
-            sys.exit(1)
-        entry = transcripts[index - 1]
+        entry = transcripts[0]
         return entry["folder"], entry["video_id"]
 
     # Treat as video ID
@@ -136,25 +167,31 @@ def add_video(url: str, regenerate: bool = False):
     console.print(f"\n[bold green]Done![/bold green] {folder}")
 
 
-def show_list():
-    """Display all saved transcripts as a table. Returns the list."""
-    transcripts = list_transcripts()
+def show_list(limit: int | None = DEFAULT_BATCH_SIZE):
+    """Display saved transcripts as a table. Returns the displayed list."""
+    fetch_limit = limit + 1 if limit is not None else None
+    fetched = list_transcripts(limit=fetch_limit, newest_first=True)
+    has_more = limit is not None and len(fetched) > limit
+    transcripts = fetched[:limit] if limit is not None else fetched
     if not transcripts:
         console.print("[dim]No transcripts saved yet.[/dim]")
         return transcripts
 
     table = Table(title="Saved Transcripts")
-    table.add_column("#", style="dim", width=4)
     table.add_column("Date", width=19)
     table.add_column("Video ID", width=13)
     table.add_column("Title")
     table.add_column("Summary", width=8)
 
-    for i, t in enumerate(transcripts, 1):
+    for t in transcripts:
         summary_mark = "[green]yes[/green]" if t["has_summary"] else "[dim]no[/dim]"
-        table.add_row(str(i), t["date"], t["video_id"], t["title"], summary_mark)
+        table.add_row(t["date"], t["video_id"], t["title"], summary_mark)
 
     console.print(table)
+    if has_more:
+        console.print(
+            f"[dim]Showing latest {limit}. Use --all or --limit N to change this.[/dim]"
+        )
     return transcripts
 
 
@@ -195,13 +232,13 @@ def delete_video_cmd(ref: str | None):
     console.print("[green]Deleted.[/green]")
 
 
-def sync_missing_videos():
+def sync_missing_videos(limit: int | None = DEFAULT_BATCH_SIZE):
     """Upload local transcripts that are missing from the cloud backend."""
     if not is_connected():
         console.print("[red]Connect first:[/red] yt connect <api-key>")
         sys.exit(1)
 
-    transcripts = list_transcripts()
+    transcripts = list_transcripts(limit=limit, newest_first=True)
     if not transcripts:
         console.print("[dim]No transcripts saved yet.[/dim]")
         return
@@ -221,6 +258,8 @@ def sync_missing_videos():
     failed = 0
     skipped = 0
 
+    scope = "all local videos" if limit is None else f"latest {limit} local video(s)"
+    console.print(f"[dim]Checking {scope}.[/dim]")
     console.print(f"[dim]Found {len(missing_video_ids)} missing video(s).[/dim]")
     for entry in transcripts:
         video_id = entry["video_id"]
@@ -306,10 +345,10 @@ def interactive_mode():
         console.print()
         console.print("[1] Add new video")
         console.print("[2] List transcripts")
-        console.print("[3] View transcript  [dim](3 <#|id>)[/dim]")
-        console.print("[4] View summary     [dim](4 <#|id>)[/dim]")
+        console.print("[3] View transcript  [dim](3 <video_id>)[/dim]")
+        console.print("[4] View summary     [dim](4 <video_id>)[/dim]")
         console.print("[5] Open web viewer")
-        console.print("[6] Delete transcript [dim](6 <#|id>)[/dim]")
+        console.print("[6] Delete transcript [dim](6 <video_id>)[/dim]")
         console.print("[7] Sync missing videos")
         console.print("[8] Exit")
         console.print()
@@ -328,12 +367,12 @@ def interactive_mode():
             show_list()
         elif action == "3":
             if ref is None:
-                ref = click.prompt("Video # or ID")
+                ref = click.prompt("Video ID")
             folder, _ = resolve_ref(ref)
             view_transcript(folder)
         elif action == "4":
             if ref is None:
-                ref = click.prompt("Video # or ID")
+                ref = click.prompt("Video ID")
             folder, _ = resolve_ref(ref)
             view_summary(folder)
         elif action == "5":
@@ -341,7 +380,7 @@ def interactive_mode():
             run_server(port)
         elif action == "6":
             if ref is None:
-                ref = click.prompt("Video # or ID")
+                ref = click.prompt("Video ID")
             delete_video_cmd(ref)
         elif action == "7":
             sync_missing_videos()
@@ -351,8 +390,14 @@ def interactive_mode():
             console.print("[dim]Invalid choice.[/dim]")
 
 
-@click.command(context_settings={"help_option_names": ["-h", "--help"]})
-@click.argument("args", nargs=-1)
+@click.command(
+    context_settings={
+        "help_option_names": ["-h", "--help"],
+        "ignore_unknown_options": True,
+        "allow_extra_args": True,
+    }
+)
+@click.argument("args", nargs=-1, type=click.UNPROCESSED)
 def cli(args):
     """yt — YouTube Transcript & Summary CLI.
 
@@ -360,17 +405,21 @@ def cli(args):
     Commands:
       yt                        Interactive mode
       yt <url>                  Fetch transcript & summarize a video
-      yt list,    yt l          List all saved transcripts
-      yt view,    yt v [ref]    View transcript (latest if no ref)
-      yt summary, yt s [ref]    View summary (latest if no ref)
-      yt delete,  yt d [ref]    Delete transcript & summary (latest if no ref)
+      yt list,    yt l          List latest 100 saved transcripts
+      yt list --all             List all saved transcripts
+      yt list --limit N         List latest N saved transcripts
+      yt view,    yt v [video_id]    View transcript (latest if omitted)
+      yt summary, yt s [video_id]    View summary (latest if omitted)
+      yt delete,  yt d [video_id]    Delete transcript & summary (latest if omitted)
       yt web,     yt w [port]   Open web viewer (default port 8765)
       yt connect  <key>         Connect to cloud with API key
-      yt sync                   Upload local videos missing from cloud
+      yt sync                   Upload latest 100 local videos missing from cloud
+      yt sync --all             Upload all local videos missing from cloud
+      yt sync --limit N         Upload latest N local videos missing from cloud
       yt disconnect             Remove cloud connection
       yt setup-shell            Configure shell aliases for URLs
 
-    [ref] can be a # index from the list or a video ID.
+    [video_id] is a YouTube video ID.
     """
     if not args:
         interactive_mode()
@@ -380,7 +429,8 @@ def cli(args):
     ref = args[1] if len(args) > 1 else None
 
     if cmd in ("l", "list"):
-        show_list()
+        limit = parse_batch_options(args[1:], "yt list", DEFAULT_BATCH_SIZE)
+        show_list(limit)
     elif cmd in ("v", "view"):
         folder, _ = resolve_ref(ref)
         view_transcript(folder)
@@ -401,7 +451,8 @@ def cli(args):
         save_config(config)
         console.print("[green]Connected![/green] API key saved to ~/.yt/config.json")
     elif cmd == "sync":
-        sync_missing_videos()
+        limit = parse_batch_options(args[1:], "yt sync", DEFAULT_BATCH_SIZE)
+        sync_missing_videos(limit)
     elif cmd == "disconnect":
         config = load_config()
         config.pop("api_key", None)

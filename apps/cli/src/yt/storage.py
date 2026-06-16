@@ -5,13 +5,15 @@ from pathlib import Path
 from .config import TRANSCRIPTS_DIR
 
 
-def list_transcripts() -> list[dict]:
-    """List all saved transcripts, sorted by date ascending (oldest first)."""
+def list_transcripts(
+    *, limit: int | None = None, newest_first: bool = False
+) -> list[dict]:
+    """List saved transcripts, sorted by date ascending by default."""
     if not TRANSCRIPTS_DIR.exists():
         return []
 
     results = []
-    for folder in sorted(TRANSCRIPTS_DIR.iterdir()):
+    for folder in sorted(TRANSCRIPTS_DIR.iterdir(), reverse=newest_first):
         if not folder.is_dir():
             continue
         parsed = parse_folder_name(folder.name)
@@ -20,6 +22,8 @@ def list_transcripts() -> list[dict]:
         parsed["folder"] = folder
         parsed["has_summary"] = (folder / "summary.md").exists()
         results.append(parsed)
+        if limit is not None and len(results) >= limit:
+            break
     return results
 
 

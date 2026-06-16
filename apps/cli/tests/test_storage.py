@@ -63,6 +63,15 @@ class TestListTranscripts:
         assert results[1]["video_id"] == "vid3"
         assert results[2]["video_id"] == "vid2"
 
+    def test_newest_first_with_limit(self, transcripts_dir):
+        (transcripts_dir / "2025-01-01 - vid1 - First").mkdir()
+        (transcripts_dir / "2025-06-15 - vid2 - Second").mkdir()
+        (transcripts_dir / "2025-03-10 - vid3 - Third").mkdir()
+
+        results = list_transcripts(limit=2, newest_first=True)
+
+        assert [result["video_id"] for result in results] == ["vid2", "vid3"]
+
     def test_skips_non_matching_folders(self, transcripts_dir):
         (transcripts_dir / "2025-06-15 - vid1 - Good").mkdir()
         (transcripts_dir / "random_folder").mkdir()
