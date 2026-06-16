@@ -74,6 +74,8 @@ pnpm cli:test
 
 **After every code modification, run the full test suite and verify all tests pass before considering the task complete.**
 
+For frontend changes, do not use browser automation or in-app browser verification unless the user explicitly asks for it. Let the user perform visual/browser testing.
+
 ### Test conventions
 
 - Tests live in `apps/cli/tests/` and mirror the source module names (`test_transcript.py` tests `yt/transcript.py`, etc.).

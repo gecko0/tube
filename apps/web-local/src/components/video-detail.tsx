@@ -45,7 +45,7 @@ export function VideoDetail({ detail }: VideoDetailProps) {
 
       {/* Tabs */}
       <Tabs defaultValue={detail.summary_md ? "summary" : "transcript"}>
-        <TabsList>
+        <TabsList variant="subtle">
           <TabsTrigger value="summary" disabled={!detail.summary_md}>
             Summary
           </TabsTrigger>
