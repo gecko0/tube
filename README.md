@@ -65,6 +65,7 @@ Usage: yt [ARGS]...
     yt delete,  yt d [ref]    Delete transcript & summary (latest if no ref)
     yt web,     yt w [port]   Open web viewer (default port 8765)
     yt connect  <key>         Connect to cloud with API key
+    yt sync                   Upload local videos missing from cloud
     yt disconnect             Remove cloud connection
     yt setup-shell            Configure shell aliases for URLs
 
@@ -196,11 +197,16 @@ yt connect <your-api-key>
 
 # Now every `yt <url>` will automatically sync to the cloud
 
+# Upload existing local transcripts that are missing from the cloud
+yt sync
+
 # To disconnect
 yt disconnect
 ```
 
 When connected, `yt <url>` saves locally as usual and also uploads to the Convex cloud backend. If the upload fails, the CLI warns but doesn't block.
+
+Run `yt sync` after connecting a new API key to backfill existing local transcripts. The command asks Convex which local video IDs are missing and uploads only those videos.
 
 ### Interactive mode
 

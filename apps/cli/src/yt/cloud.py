@@ -5,7 +5,8 @@ from pathlib import Path
 import requests
 
 CONFIG_PATH = Path.home() / ".yt" / "config.json"
-DEFAULT_CONVEX_URL = "https://yt-tube.convex.site"
+DEFAULT_CONVEX_URL = "https://sensible-alligator-750.convex.site"
+MISSING_CHECK_CHUNK_SIZE = 500
 
 
 def load_config() -> dict:
@@ -25,6 +26,41 @@ def is_connected() -> bool:
     """Check if an API key is configured."""
     config = load_config()
     return bool(config.get("api_key"))
+
+
+def get_missing_video_ids(video_ids: list[str]) -> list[str] | None:
+    """Return the subset of video IDs not present in Convex, or None on failure."""
+    config = load_config()
+    api_key = config.get("api_key")
+    if not api_key:
+        return None
+
+    convex_url = config.get("convex_url", DEFAULT_CONVEX_URL)
+    missing: list[str] = []
+
+    try:
+        for start in range(0, len(video_ids), MISSING_CHECK_CHUNK_SIZE):
+            chunk = video_ids[start : start + MISSING_CHECK_CHUNK_SIZE]
+            resp = requests.post(
+                f"{convex_url}/api/missing",
+                json={"videoIds": chunk},
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=30,
+            )
+            if resp.status_code != 200:
+                return None
+
+            data = resp.json()
+            chunk_missing = data.get("missingVideoIds")
+            if not isinstance(chunk_missing, list) or not all(
+                isinstance(video_id, str) for video_id in chunk_missing
+            ):
+                return None
+            missing.extend(chunk_missing)
+    except (requests.RequestException, ValueError):
+        return None
+
+    return missing
 
 
 def upload_video(

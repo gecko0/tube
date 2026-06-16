@@ -13,6 +13,26 @@ export const resolveApiKey = internalQuery({
   },
 });
 
+export const findMissingVideoIds = internalQuery({
+  args: { userId: v.string(), videoIds: v.array(v.string()) },
+  returns: v.array(v.string()),
+  handler: async (ctx, args) => {
+    const missing: Array<string> = [];
+    for (const videoId of args.videoIds) {
+      const existing = await ctx.db
+        .query("videos")
+        .withIndex("by_userId_and_videoId", (q) =>
+          q.eq("userId", args.userId).eq("videoId", videoId)
+        )
+        .unique();
+      if (!existing) {
+        missing.push(videoId);
+      }
+    }
+    return missing;
+  },
+});
+
 export const upsertVideo = internalMutation({
   args: {
     userId: v.string(),

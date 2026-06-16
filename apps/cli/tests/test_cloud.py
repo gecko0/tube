@@ -3,7 +3,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from yt.cloud import is_connected, load_config, save_config, upload_video
+from yt.cloud import (
+    get_missing_video_ids,
+    is_connected,
+    load_config,
+    save_config,
+    upload_video,
+)
 
 
 @pytest.fixture()
@@ -124,6 +130,38 @@ class TestUploadVideo:
 
 
 # ---------------------------------------------------------------------------
+# get_missing_video_ids
+# ---------------------------------------------------------------------------
+class TestGetMissingVideoIds:
+    def test_returns_none_when_no_key(self, config_path):
+        assert get_missing_video_ids(["vid1"]) is None
+
+    def test_successful_missing_check(self, config_path):
+        save_config({"api_key": "my-key"})
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"missingVideoIds": ["vid2"]}
+
+        with patch("yt.cloud.requests.post", return_value=mock_resp) as mock_post:
+            result = get_missing_video_ids(["vid1", "vid2"])
+
+        assert result == ["vid2"]
+        mock_post.assert_called_once()
+        assert mock_post.call_args.args[0] == "https://sensible-alligator-750.convex.site/api/missing"
+        assert mock_post.call_args.kwargs["json"] == {"videoIds": ["vid1", "vid2"]}
+        assert mock_post.call_args.kwargs["headers"]["Authorization"] == "Bearer my-key"
+
+    def test_returns_none_on_invalid_response(self, config_path):
+        save_config({"api_key": "my-key"})
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"missingVideoIds": [123]}
+
+        with patch("yt.cloud.requests.post", return_value=mock_resp):
+            assert get_missing_video_ids(["vid1"]) is None
+
+
+# ---------------------------------------------------------------------------
 # CLI connect / disconnect commands
 # ---------------------------------------------------------------------------
 class TestConnectDisconnect:
@@ -163,3 +201,53 @@ class TestConnectDisconnect:
         assert "api_key" not in config
         # Other config keys preserved
         assert config["convex_url"] == "https://x.convex.site"
+
+
+# ---------------------------------------------------------------------------
+# CLI sync command
+# ---------------------------------------------------------------------------
+class TestSync:
+    def test_sync_requires_connection(self, config_path):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["sync"])
+
+        assert result.exit_code != 0
+        assert "Connect first" in result.output
+
+    def test_sync_uploads_only_missing_videos(self, config_path, transcripts_dir):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        save_config({"api_key": "my-key"})
+
+        local_only = transcripts_dir / "2025-06-15 - localonly01 - Local Only"
+        local_only.mkdir()
+        (local_only / "transcript.md").write_text("# Local transcript", encoding="utf-8")
+        (local_only / "summary.md").write_text("# Local summary", encoding="utf-8")
+
+        already_synced = transcripts_dir / "2025-06-16 - synced00002 - Already Synced"
+        already_synced.mkdir()
+        (already_synced / "transcript.md").write_text("# Existing transcript", encoding="utf-8")
+
+        runner = CliRunner()
+        with (
+            patch("yt.main.get_missing_video_ids", return_value=["localonly01"]) as mock_missing,
+            patch("yt.main.upload_video", return_value=True) as mock_upload,
+        ):
+            result = runner.invoke(cli, ["sync"])
+
+        assert result.exit_code == 0
+        assert "Uploaded 1 missing video" in result.output
+        mock_missing.assert_called_once_with(["localonly01", "synced00002"])
+        mock_upload.assert_called_once_with(
+            video_id="localonly01",
+            date="2025-06-15",
+            title="Local Only",
+            transcript_md="# Local transcript",
+            summary_md="# Local summary",
+        )

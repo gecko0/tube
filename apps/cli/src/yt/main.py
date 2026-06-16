@@ -10,9 +10,21 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
-from .cloud import is_connected, load_config, save_config, upload_video
+from .cloud import (
+    get_missing_video_ids,
+    is_connected,
+    load_config,
+    save_config,
+    upload_video,
+)
 from .server import run_server
-from .storage import find_by_video_id, list_transcripts, parse_folder_name, read_summary, read_transcript
+from .storage import (
+    find_by_video_id,
+    list_transcripts,
+    parse_folder_name,
+    read_summary,
+    read_transcript,
+)
 from .summarizer import save_summary, summarize
 from .transcript import extract_video_id, fetch_metadata, fetch_transcript, save_transcript
 
@@ -183,6 +195,68 @@ def delete_video_cmd(ref: str | None):
     console.print("[green]Deleted.[/green]")
 
 
+def sync_missing_videos():
+    """Upload local transcripts that are missing from the cloud backend."""
+    if not is_connected():
+        console.print("[red]Connect first:[/red] yt connect <api-key>")
+        sys.exit(1)
+
+    transcripts = list_transcripts()
+    if not transcripts:
+        console.print("[dim]No transcripts saved yet.[/dim]")
+        return
+
+    video_ids = [entry["video_id"] for entry in transcripts]
+    missing_video_ids = get_missing_video_ids(video_ids)
+    if missing_video_ids is None:
+        console.print("[red]Unable to check cloud sync status.[/red]")
+        sys.exit(1)
+
+    if not missing_video_ids:
+        console.print("[green]All local transcripts are already synced.[/green]")
+        return
+
+    missing = set(missing_video_ids)
+    uploaded = 0
+    failed = 0
+    skipped = 0
+
+    console.print(f"[dim]Found {len(missing_video_ids)} missing video(s).[/dim]")
+    for entry in transcripts:
+        video_id = entry["video_id"]
+        if video_id not in missing:
+            continue
+
+        folder = entry["folder"]
+        transcript_md = read_transcript(folder)
+        if not transcript_md:
+            skipped += 1
+            console.print(f"[yellow]Skipped {video_id}: transcript.md not found.[/yellow]")
+            continue
+
+        summary_md = read_summary(folder)
+        success = upload_video(
+            video_id=video_id,
+            date=entry["date"],
+            title=entry["title"],
+            transcript_md=transcript_md,
+            summary_md=summary_md,
+        )
+        if success:
+            uploaded += 1
+            console.print(f"[green]Uploaded[/green] {video_id}")
+        else:
+            failed += 1
+            console.print(f"[red]Failed[/red] {video_id}")
+
+    console.print(
+        f"[green]Uploaded {uploaded} missing video(s).[/green] "
+        f"[dim]{skipped} skipped, {failed} failed.[/dim]"
+    )
+    if failed:
+        sys.exit(1)
+
+
 def setup_shell():
     """Add noglob aliases to the user's shell config so URLs work without quoting."""
     shell = os.environ.get("SHELL", "")
@@ -236,7 +310,8 @@ def interactive_mode():
         console.print("[4] View summary     [dim](4 <#|id>)[/dim]")
         console.print("[5] Open web viewer")
         console.print("[6] Delete transcript [dim](6 <#|id>)[/dim]")
-        console.print("[7] Exit")
+        console.print("[7] Sync missing videos")
+        console.print("[8] Exit")
         console.print()
 
         parts = click.prompt(">", type=str).strip().split()
@@ -268,7 +343,9 @@ def interactive_mode():
             if ref is None:
                 ref = click.prompt("Video # or ID")
             delete_video_cmd(ref)
-        elif action in ("7", "q", "exit"):
+        elif action == "7":
+            sync_missing_videos()
+        elif action in ("8", "q", "exit"):
             break
         else:
             console.print("[dim]Invalid choice.[/dim]")
@@ -289,6 +366,7 @@ def cli(args):
       yt delete,  yt d [ref]    Delete transcript & summary (latest if no ref)
       yt web,     yt w [port]   Open web viewer (default port 8765)
       yt connect  <key>         Connect to cloud with API key
+      yt sync                   Upload local videos missing from cloud
       yt disconnect             Remove cloud connection
       yt setup-shell            Configure shell aliases for URLs
 
@@ -322,6 +400,8 @@ def cli(args):
         config["api_key"] = ref
         save_config(config)
         console.print("[green]Connected![/green] API key saved to ~/.yt/config.json")
+    elif cmd == "sync":
+        sync_missing_videos()
     elif cmd == "disconnect":
         config = load_config()
         config.pop("api_key", None)
