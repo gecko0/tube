@@ -33,6 +33,10 @@ const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 const SIDEBAR_WIDTH_STORAGE_KEY = "sidebar_width"
 
+function clampSidebarWidth(width: number) {
+  return Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, width))
+}
+
 type SidebarContextProps = {
   state: "expanded" | "collapsed"
   open: boolean
@@ -73,11 +77,12 @@ function SidebarProvider({
   const [openMobile, setOpenMobile] = React.useState(false)
   const [sidebarWidth, _setSidebarWidth] = React.useState(() => {
     const stored = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY)
-    return stored ? Number(stored) : SIDEBAR_DEFAULT_WIDTH
+    const width = stored ? Number(stored) : SIDEBAR_DEFAULT_WIDTH
+    return Number.isFinite(width) ? clampSidebarWidth(width) : SIDEBAR_DEFAULT_WIDTH
   })
 
   const setSidebarWidth = React.useCallback((width: number) => {
-    const clamped = Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, width))
+    const clamped = clampSidebarWidth(width)
     _setSidebarWidth(clamped)
     localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(clamped))
   }, [])
@@ -233,7 +238,7 @@ function Sidebar({
       <div
         data-slot="sidebar-gap"
         className={cn(
-          "relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear",
+          "relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear group-data-[resizing=true]/sidebar-wrapper:transition-none",
           "group-data-[collapsible=offcanvas]:w-0",
           "group-data-[side=right]:rotate-180",
           variant === "floating" || variant === "inset"
@@ -244,7 +249,7 @@ function Sidebar({
       <div
         data-slot="sidebar-container"
         className={cn(
-          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear md:flex",
+          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear group-data-[resizing=true]/sidebar-wrapper:transition-none md:flex",
           side === "left"
             ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
             : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
@@ -323,25 +328,59 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
 function SidebarResizer({ className, ...props }: React.ComponentProps<"div">) {
   const { sidebarWidth, setSidebarWidth } = useSidebar()
 
-  const handleMouseDown = React.useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault()
-      const startX = e.clientX
-      const startWidth = sidebarWidth
+  const handlePointerDown = React.useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return
 
-      const handleMouseMove = (e: MouseEvent) => {
-        setSidebarWidth(startWidth + (e.clientX - startX))
+      event.preventDefault()
+      event.currentTarget.setPointerCapture(event.pointerId)
+
+      const wrapper = event.currentTarget.closest<HTMLElement>(
+        "[data-slot='sidebar-wrapper']"
+      )
+      const sidebar = event.currentTarget.closest<HTMLElement>(
+        "[data-slot='sidebar']"
+      )
+      const direction = sidebar?.dataset.side === "right" ? -1 : 1
+      const startX = event.clientX
+      const startWidth = sidebarWidth
+      let frame = 0
+      let nextWidth = startWidth
+
+      const applyWidth = () => {
+        frame = 0
+        wrapper?.style.setProperty("--sidebar-width", `${nextWidth}px`)
       }
 
-      const handleMouseUp = () => {
-        document.removeEventListener("mousemove", handleMouseMove)
-        document.removeEventListener("mouseup", handleMouseUp)
+      const handlePointerMove = (event: PointerEvent) => {
+        nextWidth = clampSidebarWidth(
+          startWidth + (event.clientX - startX) * direction
+        )
+        if (!frame) {
+          frame = window.requestAnimationFrame(applyWidth)
+        }
+      }
+
+      const handlePointerUp = () => {
+        if (frame) {
+          window.cancelAnimationFrame(frame)
+          frame = 0
+        }
+
+        wrapper?.style.setProperty("--sidebar-width", `${nextWidth}px`)
+        wrapper?.removeAttribute("data-resizing")
+        window.removeEventListener("pointermove", handlePointerMove)
+        window.removeEventListener("pointerup", handlePointerUp)
+        window.removeEventListener("pointercancel", handlePointerUp)
         document.body.style.cursor = ""
         document.body.style.userSelect = ""
+        setSidebarWidth(nextWidth)
       }
 
-      document.addEventListener("mousemove", handleMouseMove)
-      document.addEventListener("mouseup", handleMouseUp)
+      wrapper?.setAttribute("data-resizing", "true")
+      window.addEventListener("pointermove", handlePointerMove)
+      window.addEventListener("pointerup", handlePointerUp, { once: true })
+      window.addEventListener("pointercancel", handlePointerUp, { once: true })
       document.body.style.cursor = "col-resize"
       document.body.style.userSelect = "none"
     },
@@ -351,9 +390,9 @@ function SidebarResizer({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="sidebar-resizer"
-      onMouseDown={handleMouseDown}
+      onPointerDown={handlePointerDown}
       className={cn(
-        "absolute inset-y-0 -right-1 z-20 hidden w-2 cursor-col-resize md:block",
+        "absolute inset-y-0 -right-1 z-20 hidden w-2 touch-none cursor-col-resize md:block",
         "after:absolute after:inset-y-0 after:left-1/2 after:-translate-x-1/2 after:w-0.5 after:rounded-full",
         "hover:after:bg-sidebar-border after:transition-colors",
         className
