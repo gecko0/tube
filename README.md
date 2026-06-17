@@ -1,13 +1,14 @@
 # tube — YouTube Transcript & Summary CLI
 
-Fetch YouTube video transcripts and summarize them with Claude, all from the terminal.
+Fetch YouTube video transcripts and summarize them with Claude or Codex, all from the terminal.
 
 ## Prerequisites
 
 - **Python 3.9+** — check with `python3 --version`
 - **uv** — fast Python package manager ([install guide](https://docs.astral.sh/uv/getting-started/installation/))
 - **pnpm** — JavaScript package manager for the web workspaces
-- **Claude Code** — required for summarization ([install guide](https://docs.anthropic.com/en/docs/claude-code))
+- **Claude Code** — default summarization engine ([install guide](https://docs.anthropic.com/en/docs/claude-code))
+- **Codex CLI** — optional summarization engine (`npm install -g @openai/codex`)
 
 ## Setup
 
@@ -41,6 +42,14 @@ Summarization uses Claude Code's `sonnet` model alias by default. To use a diffe
 export YT_CLAUDE_MODEL=opus
 ```
 
+To use Codex instead, install and authenticate the Codex CLI:
+
+```bash
+npm install -g @openai/codex
+codex login
+yt config --ai_engine codex
+```
+
 ### 4. Configure your shell
 
 ```bash
@@ -65,6 +74,7 @@ Usage: yt [ARGS]...
   Commands:
     yt                        Interactive mode
     yt <url>                  Fetch transcript & summarize a video
+    yt --ai_engine codex <url> Summarize with Codex instead of Claude
     yt --model opus <url>     Summarize with a specific Claude model/alias
     yt --opus <url>           Shortcut for yt --model opus <url>
     yt list,    yt l          List latest 100 saved transcripts
@@ -76,7 +86,10 @@ Usage: yt [ARGS]...
     yt web,     yt w [port]   Open web viewer (default port 8765)
     yt connect  <key>         Connect to cloud with API key
     yt config                 Show saved config
+    yt config --ai_engine codex Set default AI engine
     yt config --model opus    Set default summarization model
+    yt config --brief_summary_prompt @prompt.md Set brief summary prompt
+    yt config reset --brief_summary_prompt Reset brief summary prompt
     yt config --api_key KEY   Set cloud API key
     yt sync                   Upload latest 100 local videos missing from cloud
     yt sync --all             Upload all local videos missing from cloud
@@ -156,11 +169,14 @@ This will:
 1. Fetch video metadata (title, author) via YouTube oEmbed
 2. Download the transcript
 3. Save `transcript.md` to disk
-4. Summarize via `claude --model sonnet -p` and save `summary.md`
+4. Generate a brief orientation summary and save `brief_summary.md`
+5. Generate the detailed summary and save `summary.md`
 
 If the video was already fetched, you'll be asked whether to skip or regenerate.
 
-To use a different Claude model for one run:
+Each video folder also includes `metadata.json` with structured video and processing metadata such as URL, author, fetched timestamp, AI engine, model, brief summary timestamp, and detailed summary timestamp. Cloud sync uploads this JSON metadata directly so the server does not need to parse markdown.
+
+Claude is the default AI engine:
 
 ```bash
 yt --model opus https://www.youtube.com/watch?v=dQw4w9WgXcQ
@@ -168,15 +184,38 @@ yt --model=opus https://www.youtube.com/watch?v=dQw4w9WgXcQ
 yt --opus https://www.youtube.com/watch?v=dQw4w9WgXcQ
 ```
 
-To save a default model in `~/.yt/config.json`:
+To use Codex for one run:
 
 ```bash
+yt --ai_engine codex https://www.youtube.com/watch?v=dQw4w9WgXcQ
+yt --ai_engine=codex https://www.youtube.com/watch?v=dQw4w9WgXcQ
+yt --ai_engine codex --model latest https://www.youtube.com/watch?v=dQw4w9WgXcQ
+```
+
+For Codex, `latest` resolves to `gpt-5.5` and the CLI runs `codex exec --model gpt-5.5 -c model_reasoning_effort="medium" -`.
+
+To save defaults in `~/.yt/config.json`:
+
+```bash
+yt config --ai_engine codex
 yt config --model opus
 ```
 
-The CLI `--model` option overrides the saved config for that run.
+To customize the brief orientation summary prompt:
 
-Model precedence is: CLI option, saved config, `YT_CLAUDE_MODEL`, then `sonnet`.
+```bash
+yt config --brief_summary_prompt "Write a short orientation..."
+yt config --brief_summary_prompt @prompt.md
+yt config reset --brief_summary_prompt
+```
+
+The CLI `--ai_engine` and `--model` options override the saved config for that run.
+
+Engine precedence is: CLI option, saved config, `YT_AI_ENGINE`, then `claude`.
+
+Claude model precedence is: CLI option, saved config, `YT_CLAUDE_MODEL`, then `sonnet`.
+
+Codex model precedence is: CLI option, saved config, `YT_CODEX_MODEL`, then `gpt-5.5`. If Codex receives a known Claude alias such as `opus`, `sonnet`, or `fable`, `yt` prints a warning and falls back to `gpt-5.5`.
 
 ### List saved transcripts
 

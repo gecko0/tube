@@ -75,7 +75,15 @@ class TestUploadVideo:
         mock_resp.status_code = 200
 
         with patch("yt.cloud.requests.post", return_value=mock_resp) as mock_post:
-            result = upload_video("vid1", "2025-06-15", "Title", "# Transcript", "# Summary")
+            result = upload_video(
+                "vid1",
+                "2025-06-15",
+                "Title",
+                "# Transcript",
+                "# Summary",
+                "# Brief",
+                {"author": "Author", "aiEngine": "codex", "model": "gpt-5.5"},
+            )
 
         assert result is True
         mock_post.assert_called_once()
@@ -84,6 +92,12 @@ class TestUploadVideo:
         payload = call_kwargs.kwargs["json"]
         assert payload["videoId"] == "vid1"
         assert payload["summaryMd"] == "# Summary"
+        assert payload["briefSummaryMd"] == "# Brief"
+        assert payload["metadata"] == {
+            "author": "Author",
+            "aiEngine": "codex",
+            "model": "gpt-5.5",
+        }
 
     def test_upload_without_summary(self, config_path):
         save_config({"api_key": "my-key"})
@@ -96,6 +110,7 @@ class TestUploadVideo:
         assert result is True
         payload = mock_post.call_args.kwargs["json"]
         assert "summaryMd" not in payload
+        assert "briefSummaryMd" not in payload
 
     def test_returns_false_on_server_error(self, config_path):
         save_config({"api_key": "my-key"})
@@ -207,6 +222,18 @@ class TestConnectDisconnect:
 # CLI config command
 # ---------------------------------------------------------------------------
 class TestConfigCommand:
+    def test_sets_ai_engine(self, config_path):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        result = CliRunner().invoke(cli, ["config", "--ai_engine", "codex"])
+
+        assert result.exit_code == 0
+        assert "Set" in result.output
+        config = json.loads(config_path.read_text())
+        assert config["ai_engine"] == "codex"
+
     def test_sets_model(self, config_path):
         from click.testing import CliRunner
 
@@ -217,6 +244,51 @@ class TestConfigCommand:
         assert result.exit_code == 0
         assert "Set" in result.output
         config = json.loads(config_path.read_text())
+        assert config["model"] == "opus"
+
+    def test_sets_brief_summary_prompt_inline(self, config_path):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        result = CliRunner().invoke(
+            cli,
+            ["config", "--brief_summary_prompt", "custom prompt"],
+        )
+
+        assert result.exit_code == 0
+        config = json.loads(config_path.read_text())
+        assert config["brief_summary_prompt"] == "custom prompt"
+
+    def test_sets_brief_summary_prompt_from_file(self, config_path, tmp_path):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        prompt_file = tmp_path / "prompt.md"
+        prompt_file.write_text("prompt from file", encoding="utf-8")
+
+        result = CliRunner().invoke(
+            cli,
+            ["config", "--brief_summary_prompt", f"@{prompt_file}"],
+        )
+
+        assert result.exit_code == 0
+        config = json.loads(config_path.read_text())
+        assert config["brief_summary_prompt"] == "prompt from file"
+
+    def test_resets_brief_summary_prompt(self, config_path):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        save_config({"brief_summary_prompt": "custom prompt", "model": "opus"})
+
+        result = CliRunner().invoke(cli, ["config", "reset", "--brief_summary_prompt"])
+
+        assert result.exit_code == 0
+        config = json.loads(config_path.read_text())
+        assert "brief_summary_prompt" not in config
         assert config["model"] == "opus"
 
     def test_sets_api_key_with_underscore_option(self, config_path):
@@ -242,6 +314,7 @@ class TestConfigCommand:
             [
                 "config",
                 "--model=opus",
+                "--ai_engine=codex",
                 "--convex_url",
                 "https://custom.convex.site",
             ],
@@ -250,6 +323,7 @@ class TestConfigCommand:
         assert result.exit_code == 0
         config = json.loads(config_path.read_text())
         assert config["model"] == "opus"
+        assert config["ai_engine"] == "codex"
         assert config["convex_url"] == "https://custom.convex.site"
 
     def test_shows_saved_config(self, config_path):
@@ -257,11 +331,13 @@ class TestConfigCommand:
 
         from yt.main import cli
 
-        save_config({"api_key": "my-secret-key", "model": "opus"})
+        save_config({"api_key": "my-secret-key", "model": "opus", "ai_engine": "codex"})
 
         result = CliRunner().invoke(cli, ["config"])
 
         assert result.exit_code == 0
+        assert "ai_engine" in result.output
+        assert "codex" in result.output
         assert "model" in result.output
         assert "opus" in result.output
         assert "api_key" in result.output
@@ -300,6 +376,7 @@ class TestSync:
         local_only.mkdir()
         (local_only / "transcript.md").write_text("# Local transcript", encoding="utf-8")
         (local_only / "summary.md").write_text("# Local summary", encoding="utf-8")
+        (local_only / "brief_summary.md").write_text("# Brief summary", encoding="utf-8")
 
         already_synced = transcripts_dir / "2025-06-16 - synced00002 - Already Synced"
         already_synced.mkdir()
@@ -321,6 +398,8 @@ class TestSync:
             title="Local Only",
             transcript_md="# Local transcript",
             summary_md="# Local summary",
+            brief_summary_md="# Brief summary",
+            metadata=None,
         )
 
     def test_sync_defaults_to_latest_100(self, config_path, transcripts_dir):

@@ -1,5 +1,6 @@
 import { internalQuery, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+import { videoMetadataValidator } from "./validators";
 
 export const resolveApiKey = internalQuery({
   args: { keyHash: v.string() },
@@ -41,7 +42,9 @@ export const upsertVideo = internalMutation({
     title: v.string(),
     transcriptMd: v.string(),
     summaryMd: v.optional(v.string()),
+    briefSummaryMd: v.optional(v.string()),
     thumbnailUrl: v.string(),
+    metadata: v.optional(videoMetadataValidator),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -58,7 +61,9 @@ export const upsertVideo = internalMutation({
         title: args.title,
         transcriptMd: args.transcriptMd,
         summaryMd: args.summaryMd,
+        briefSummaryMd: args.briefSummaryMd,
         thumbnailUrl: args.thumbnailUrl,
+        metadata: args.metadata,
       });
     } else {
       await ctx.db.insert("videos", {
@@ -68,7 +73,9 @@ export const upsertVideo = internalMutation({
         title: args.title,
         transcriptMd: args.transcriptMd,
         summaryMd: args.summaryMd,
+        briefSummaryMd: args.briefSummaryMd,
         thumbnailUrl: args.thumbnailUrl,
+        metadata: args.metadata,
       });
     }
     return null;

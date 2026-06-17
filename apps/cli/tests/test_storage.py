@@ -5,6 +5,7 @@ from yt.storage import (
     find_by_video_id,
     list_transcripts,
     parse_folder_name,
+    read_brief_summary,
     read_summary,
     read_transcript,
 )
@@ -200,3 +201,20 @@ class TestReadSummary:
         folder = tmp_path / "empty_folder"
         folder.mkdir()
         assert read_summary(folder) is None
+
+
+# ---------------------------------------------------------------------------
+# read_brief_summary
+# ---------------------------------------------------------------------------
+class TestReadBriefSummary:
+    def test_file_exists(self, tmp_path):
+        folder = tmp_path / "some_folder"
+        folder.mkdir()
+        (folder / "brief_summary.md").write_text("# Brief", encoding="utf-8")
+
+        assert read_brief_summary(folder) == "# Brief"
+
+    def test_file_missing(self, tmp_path):
+        folder = tmp_path / "empty_folder"
+        folder.mkdir()
+        assert read_brief_summary(folder) is None

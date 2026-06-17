@@ -11,6 +11,34 @@ function jsonResponse(body: unknown, status: number) {
   });
 }
 
+function normalizeVideoMetadata(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const source = value as Record<string, unknown>;
+  const metadata: Record<string, string | number> = {};
+  for (const key of [
+    "videoId",
+    "url",
+    "title",
+    "author",
+    "fetchedAt",
+    "aiEngine",
+    "model",
+    "briefSummaryGeneratedAt",
+    "summaryGeneratedAt",
+  ]) {
+    const field = source[key];
+    if (typeof field === "string") {
+      metadata[key] = field;
+    }
+  }
+  if (typeof source.version === "number") {
+    metadata.version = source.version;
+  }
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
+}
+
 async function getKeyHash(req: Request) {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -53,7 +81,9 @@ http.route({
       title: body.title,
       transcriptMd: body.transcriptMd,
       summaryMd: body.summaryMd ?? undefined,
+      briefSummaryMd: body.briefSummaryMd ?? undefined,
       thumbnailUrl: body.thumbnailUrl,
+      metadata: normalizeVideoMetadata(body.metadata),
     });
 
     return jsonResponse({ ok: true }, 200);

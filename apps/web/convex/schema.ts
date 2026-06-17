@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { videoMetadataValidator } from "./validators";
 
 export default defineSchema({
   videos: defineTable({
@@ -9,7 +10,9 @@ export default defineSchema({
     title: v.string(),
     transcriptMd: v.string(),
     summaryMd: v.optional(v.string()),
+    briefSummaryMd: v.optional(v.string()),
     thumbnailUrl: v.string(),
+    metadata: v.optional(videoMetadataValidator),
     archivedAt: v.optional(v.number()),
   })
     .index("by_userId", ["userId"])

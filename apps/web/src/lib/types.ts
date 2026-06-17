@@ -2,6 +2,19 @@ import type { Id } from "../../convex/_generated/dataModel"
 
 export type VideoView = "active" | "archived"
 
+export interface VideoMetadata {
+  version?: number
+  videoId?: string
+  url?: string
+  title?: string
+  author?: string
+  fetchedAt?: string
+  aiEngine?: string
+  model?: string
+  briefSummaryGeneratedAt?: string
+  summaryGeneratedAt?: string
+}
+
 export interface VideoSummary {
   _id: Id<"videos">
   _creationTime: number
@@ -10,6 +23,7 @@ export interface VideoSummary {
   title: string
   hasSummary: boolean
   thumbnailUrl: string
+  metadata: VideoMetadata | null
   archivedAt?: number
 }
 
@@ -19,8 +33,10 @@ export interface VideoDetail {
   date: string
   title: string
   summaryMd: string | null
+  briefSummaryMd: string | null
   transcriptMd: string
   thumbnailUrl: string
+  metadata: VideoMetadata | null
   archivedAt?: number
 }
 

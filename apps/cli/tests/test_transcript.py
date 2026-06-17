@@ -1,10 +1,12 @@
 from unittest.mock import MagicMock, patch
+import json
 
 import pytest
 import requests
 
 from yt.transcript import (
     build_folder_name,
+    build_prompt_transcript,
     build_transcript_md,
     extract_video_id,
     fetch_metadata,
@@ -145,6 +147,18 @@ class TestBuildTranscriptMd:
 
 
 # ---------------------------------------------------------------------------
+# build_prompt_transcript
+# ---------------------------------------------------------------------------
+class TestBuildPromptTranscript:
+    def test_includes_display_timestamp_and_raw_seconds(self, sample_entries):
+        text = build_prompt_transcript(sample_entries)
+
+        assert "[00:00 | t=0s] Hello and welcome." in text
+        assert "[01:05 | t=65s] Today we talk about Python." in text
+        assert "[01:01:01 | t=3661s] Let's wrap up." in text
+
+
+# ---------------------------------------------------------------------------
 # fetch_metadata (mocked)
 # ---------------------------------------------------------------------------
 class TestFetchMetadata:
@@ -217,6 +231,7 @@ class TestSaveTranscript:
         assert folder.is_dir()
         transcript_file = folder / "transcript.md"
         assert transcript_file.exists()
+        assert (folder / "metadata.json").exists()
 
     def test_content_is_correct(
         self, transcripts_dir, frozen_date, sample_entries
@@ -228,6 +243,23 @@ class TestSaveTranscript:
         assert "# My Video" in content
         assert "**Author**: Author" in content
         assert "[00:00] Hello and welcome." in content
+
+    def test_metadata_file_is_correct(
+        self, transcripts_dir, frozen_date, sample_entries
+    ):
+        folder = save_transcript(
+            "dQw4w9WgXcQ", "My Video", "Author", sample_entries
+        )
+        metadata = json.loads((folder / "metadata.json").read_text(encoding="utf-8"))
+
+        assert metadata == {
+            "version": 1,
+            "videoId": "dQw4w9WgXcQ",
+            "url": "https://youtube.com/watch?v=dQw4w9WgXcQ",
+            "title": "My Video",
+            "author": "Author",
+            "fetchedAt": "2025-06-15T10:30:45-04:00",
+        }
 
     def test_folder_name_format(
         self, transcripts_dir, frozen_date, sample_entries

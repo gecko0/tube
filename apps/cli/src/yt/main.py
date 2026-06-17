@@ -17,20 +17,36 @@ from .cloud import (
     save_config,
     upload_video,
 )
+from .metadata import read_video_metadata
 from .server import run_server
 from .storage import (
     find_by_video_id,
     list_transcripts,
     parse_folder_name,
+    read_brief_summary,
     read_summary,
     read_transcript,
 )
-from .summarizer import save_summary, summarize
-from .transcript import extract_video_id, fetch_metadata, fetch_transcript, save_transcript
+from .summarizer import (
+    BRIEF_SUMMARY_PROMPT_KEY,
+    resolve_summary_metadata,
+    save_brief_summary,
+    save_summary,
+    summarize,
+    summarize_brief,
+)
+from .transcript import (
+    build_prompt_transcript,
+    extract_video_id,
+    fetch_metadata,
+    fetch_transcript,
+    save_transcript,
+)
 
 console = Console()
 DEFAULT_BATCH_SIZE = 100
-CONFIG_KEYS = {"api_key", "convex_url", "model"}
+CONFIG_KEYS = {"api_key", "convex_url", "model", "ai_engine", BRIEF_SUMMARY_PROMPT_KEY}
+RESETTABLE_CONFIG_KEYS = {BRIEF_SUMMARY_PROMPT_KEY}
 SECRET_CONFIG_KEYS = {"api_key"}
 MODEL_ALIAS_FLAGS = {
     "--sonnet": "sonnet",
@@ -80,7 +96,16 @@ def parse_batch_options(
 
 def parse_model_options(args: tuple[str, ...]) -> tuple[str | None, tuple[str, ...]]:
     """Parse leading model options before the command or URL."""
+    model, _, remaining = parse_ai_options(args)
+    return model, remaining
+
+
+def parse_ai_options(
+    args: tuple[str, ...],
+) -> tuple[str | None, str | None, tuple[str, ...]]:
+    """Parse leading AI options before the command or URL."""
     model: str | None = None
+    ai_engine: str | None = None
     remaining = list(args)
 
     while remaining:
@@ -100,10 +125,22 @@ def parse_model_options(args: tuple[str, ...]) -> tuple[str | None, tuple[str, .
                 console.print("[red]Usage:[/red] yt --model=<model> <url>")
                 sys.exit(1)
             remaining.pop(0)
+        elif part == "--ai_engine":
+            if len(remaining) < 2 or remaining[1].startswith("--"):
+                console.print("[red]Usage:[/red] yt --ai_engine <engine> <url>")
+                sys.exit(1)
+            ai_engine = remaining[1]
+            del remaining[:2]
+        elif part.startswith("--ai_engine="):
+            ai_engine = part.split("=", 1)[1]
+            if not ai_engine:
+                console.print("[red]Usage:[/red] yt --ai_engine=<engine> <url>")
+                sys.exit(1)
+            remaining.pop(0)
         else:
             break
 
-    return model, tuple(remaining)
+    return model, ai_engine, tuple(remaining)
 
 
 def parse_config_options(parts: tuple[str, ...] | list[str]) -> dict[str, str]:
@@ -116,7 +153,9 @@ def parse_config_options(parts: tuple[str, ...] | list[str]) -> dict[str, str]:
             console.print(f"[red]Unknown argument for yt config:[/red] {part}")
             console.print(
                 "[red]Usage:[/red] yt config "
-                "[--api_key KEY] [--convex_url URL] [--model MODEL]"
+                "[--api_key KEY] [--convex_url URL] "
+                "[--model MODEL] [--ai_engine ENGINE] "
+                "[--brief_summary_prompt PROMPT|@FILE]"
             )
             sys.exit(1)
 
@@ -137,23 +176,69 @@ def parse_config_options(parts: tuple[str, ...] | list[str]) -> dict[str, str]:
 
         if key not in CONFIG_KEYS:
             console.print(f"[red]Unknown config key:[/red] {key}")
-            console.print("[dim]Supported keys: api_key, convex_url, model[/dim]")
+            console.print(
+                "[dim]Supported keys: ai_engine, api_key, "
+                "brief_summary_prompt, convex_url, model[/dim]"
+            )
             sys.exit(1)
+
+        if key == BRIEF_SUMMARY_PROMPT_KEY and value.startswith("@"):
+            prompt_path = Path(value[1:]).expanduser()
+            try:
+                value = prompt_path.read_text(encoding="utf-8")
+            except OSError as e:
+                console.print(f"[red]Unable to read prompt file:[/red] {e}")
+                sys.exit(1)
 
         updates[key] = value
 
     return updates
 
 
+def parse_config_reset_options(parts: tuple[str, ...] | list[str]) -> set[str]:
+    """Parse reset options for persisted app config."""
+    if not parts:
+        console.print("[red]Usage:[/red] yt config reset --brief_summary_prompt")
+        sys.exit(1)
+
+    reset_keys: set[str] = set()
+    for part in parts:
+        if not part.startswith("--"):
+            console.print(f"[red]Unknown argument for yt config reset:[/red] {part}")
+            console.print("[red]Usage:[/red] yt config reset --brief_summary_prompt")
+            sys.exit(1)
+
+        key = part[2:]
+        if key not in RESETTABLE_CONFIG_KEYS:
+            console.print(f"[red]Unknown reset key:[/red] {key}")
+            console.print("[dim]Resettable keys: brief_summary_prompt[/dim]")
+            sys.exit(1)
+        reset_keys.add(key)
+
+    return reset_keys
+
+
 def format_config_value(key: str, value: str) -> str:
     if key in SECRET_CONFIG_KEYS and value:
         return f"{value[:4]}...{value[-4:]}" if len(value) > 8 else "****"
+    if key == BRIEF_SUMMARY_PROMPT_KEY and len(value) > 80:
+        return f"{value[:77]}..."
     return value
 
 
 def config_cmd(parts: tuple[str, ...] | list[str]):
     """View or update persisted app config."""
     config = load_config()
+
+    if parts and parts[0] == "reset":
+        reset_keys = parse_config_reset_options(parts[1:])
+        for key in reset_keys:
+            config.pop(key, None)
+        save_config(config)
+        for key in sorted(reset_keys):
+            console.print(f"[green]Reset[/green] {key}")
+        return
+
     updates = parse_config_options(parts)
 
     if updates:
@@ -194,7 +279,12 @@ def resolve_ref(ref: str | None) -> tuple[Path, str]:
     return folder, ref
 
 
-def add_video(url: str, regenerate: bool = False, model: str | None = None):
+def add_video(
+    url: str,
+    regenerate: bool = False,
+    model: str | None = None,
+    ai_engine: str | None = None,
+):
     """Core flow: fetch transcript, summarize, save."""
     try:
         video_id = extract_video_id(url)
@@ -236,18 +326,78 @@ def add_video(url: str, regenerate: bool = False, model: str | None = None):
     folder = save_transcript(video_id, title, author, entries)
     console.print(f"[green]Transcript saved.[/green]")
 
-    console.print("[dim]Summarizing with Claude...[/dim]")
-    transcript_text = read_transcript(folder)
     try:
-        summary_text = summarize(transcript_text, title, model=model)
+        summary_metadata = resolve_summary_metadata(model=model, ai_engine=ai_engine)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    console.print(
+        f"[dim]Creating brief summary with "
+        f"{summary_metadata.ai_engine.title()}...[/dim]"
+    )
+    brief_transcript_text = build_prompt_transcript(entries)
+    try:
+        brief_summary_text = summarize_brief(
+            brief_transcript_text,
+            title,
+            video_id,
+            model=model,
+            ai_engine=ai_engine,
+            metadata=summary_metadata,
+        )
     except FileNotFoundError as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
     except subprocess.CalledProcessError as e:
-        console.print(f"[red]Claude returned an error:[/red] {e.stderr or e}")
+        console.print(f"[red]Summarizer returned an error:[/red] {e.stderr or e}")
         sys.exit(1)
 
-    save_summary(folder, summary_text, title, video_id)
+    save_brief_summary(
+        folder,
+        brief_summary_text,
+        ai_engine=summary_metadata.ai_engine,
+        model=summary_metadata.model,
+    )
+    console.print("[green]Brief summary saved.[/green]")
+
+    console.print(
+        f"[dim]Creating detailed summary with "
+        f"{summary_metadata.ai_engine.title()}...[/dim]"
+    )
+    transcript_text = read_transcript(folder)
+    try:
+        summary_text = summarize(
+            transcript_text,
+            title,
+            model=model,
+            ai_engine=ai_engine,
+            metadata=summary_metadata,
+        )
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]Summarizer returned an error:[/red] {e.stderr or e}")
+        sys.exit(1)
+
+    save_summary(
+        folder,
+        summary_text,
+        title,
+        video_id,
+        ai_engine=summary_metadata.ai_engine,
+        model=summary_metadata.model,
+    )
+    brief_summary_md = read_brief_summary(folder)
+    summary_md = read_summary(folder) or summary_text
+    metadata = read_video_metadata(folder)
     console.print("[green]Summary saved.[/green]")
 
     # Upload to cloud if connected
@@ -259,7 +409,9 @@ def add_video(url: str, regenerate: bool = False, model: str | None = None):
             date=date,
             title=title,
             transcript_md=transcript_text,
-            summary_md=summary_text,
+            summary_md=summary_md,
+            brief_summary_md=brief_summary_md,
+            metadata=metadata,
         )
         if success:
             console.print("[dim]Synced to cloud.[/dim]")
@@ -378,12 +530,16 @@ def sync_missing_videos(limit: int | None = DEFAULT_BATCH_SIZE):
             continue
 
         summary_md = read_summary(folder)
+        brief_summary_md = read_brief_summary(folder)
+        metadata = read_video_metadata(folder)
         success = upload_video(
             video_id=video_id,
             date=entry["date"],
             title=entry["title"],
             transcript_md=transcript_md,
             summary_md=summary_md,
+            brief_summary_md=brief_summary_md,
+            metadata=metadata,
         )
         if success:
             uploaded += 1
@@ -509,6 +665,7 @@ def cli(args):
     Commands:
       yt                        Interactive mode
       yt <url>                  Fetch transcript & summarize a video
+      yt --ai_engine codex <url> Summarize with Codex instead of Claude
       yt --model opus <url>     Summarize with a specific Claude model/alias
       yt --opus <url>           Shortcut for yt --model opus <url>
       yt list,    yt l          List latest 100 saved transcripts
@@ -520,7 +677,10 @@ def cli(args):
       yt web,     yt w [port]   Open web viewer (default port 8765)
       yt connect  <key>         Connect to cloud with API key
       yt config                 Show saved config
+      yt config --ai_engine codex Set default AI engine
       yt config --model opus    Set default summarization model
+      yt config --brief_summary_prompt @prompt.md Set brief summary prompt
+      yt config reset --brief_summary_prompt Reset brief summary prompt
       yt config --api_key KEY   Set cloud API key
       yt sync                   Upload latest 100 local videos missing from cloud
       yt sync --all             Upload all local videos missing from cloud
@@ -534,10 +694,11 @@ def cli(args):
         interactive_mode()
         return
 
-    model, args = parse_model_options(args)
+    model, ai_engine, args = parse_ai_options(args)
     if not args:
         console.print(
             "[red]Usage:[/red] yt "
+            "[--ai_engine <engine>] "
             "[--model <model> | --sonnet | --opus | --fable] <url>"
         )
         sys.exit(1)
@@ -581,4 +742,4 @@ def cli(args):
         setup_shell()
     else:
         # Treat as a URL
-        add_video(cmd, model=model)
+        add_video(cmd, model=model, ai_engine=ai_engine)

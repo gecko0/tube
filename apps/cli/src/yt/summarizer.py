@@ -1,21 +1,127 @@
 import shutil
 import subprocess
+import sys
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .config import CLAUDE_MODEL
+from .config import AI_ENGINE, CLAUDE_MODEL, CODEX_MODEL, CODEX_REASONING_EFFORT
 from .cloud import load_config
+from .metadata import update_video_metadata
+
+AI_ENGINES = {"claude", "codex"}
+CLAUDE_MODEL_ALIASES = {"sonnet", "opus", "fable"}
+BRIEF_SUMMARY_PROMPT_KEY = "brief_summary_prompt"
+DEFAULT_BRIEF_SUMMARY_PROMPT = """You are writing a brief orientation summary for a YouTube video.
+
+The goal is not to teach the material in depth and not to extract every useful lesson. The goal is to help a busy reader quickly understand what the video is about, what ground it covers, and whether it is worth reading the detailed summary.
+
+Video title: {title}
+Video URL: {video_url}
+
+Write markdown only.
+
+Output structure:
+
+Start with one short paragraph:
+- Say what kind of video this is.
+- Name the speaker/creator if the transcript or metadata makes that clear.
+- Explain the central idea in plain language.
+- Keep it to 1-2 sentences.
+
+Then add:
+
+### Key Sections
+
+* **<section title> (<timestamp or timestamp range>):** Briefly describe what this part of the video covers.
+* **<section title> (<timestamp or timestamp range>):** Briefly describe what this part of the video covers.
+* **<section title> (<timestamp or timestamp range>):** Briefly describe what this part of the video covers.
+
+If the video clearly ends with concrete steps, add:
+
+### Main Advice
+
+1. One short sentence.
+2. One short sentence.
+3. One short sentence.
+
+Rules:
+- Keep the whole output easy to scan, usually 150-250 words.
+- Use 3-6 key sections.
+- Be descriptive, not exhaustive.
+- Do not turn this into the detailed summary.
+- Do not write deep explanations, implementation details, or long takeaways.
+- Include timestamps when the transcript supports them.
+- Format timestamps as markdown links to the YouTube URL with `&t=<seconds>s`.
+- If exact timestamp ranges are uncertain, use a single linked start timestamp.
+- Do not invent timestamps or speaker names.
+- Do not mention that you are reading a transcript.
+
+Transcript:
+<transcript>
+{transcript_text}
+</transcript>"""
 
 
-def summarize(transcript_text: str, title: str, model: str | None = None) -> str:
-    """Call claude to summarize a transcript. Returns the summary text."""
-    if not shutil.which("claude"):
-        raise FileNotFoundError(
-            "claude CLI not found. Install Claude Code and run `claude login`.\n"
-            "See: https://docs.anthropic.com/en/docs/claude-code"
+@dataclass(frozen=True)
+class SummaryMetadata:
+    ai_engine: str
+    model: str
+
+
+def resolve_ai_engine(
+    ai_engine: str | None = None,
+    config: dict[str, str] | None = None,
+) -> str:
+    """Resolve the selected AI engine from CLI, config, env, or default."""
+    saved_config = config if config is not None else load_config()
+    resolved = (ai_engine or saved_config.get("ai_engine") or AI_ENGINE).lower()
+    if resolved not in AI_ENGINES:
+        raise ValueError(
+            f"Unsupported ai_engine: {resolved}. "
+            "Supported engines: claude, codex."
         )
+    return resolved
 
-    prompt = f"""You are an expert content analyst. Your job is to distill a YouTube video transcript into a dense, actionable reference document. The reader is busy — they want the gold, not the fluff.
+
+def resolve_model(
+    ai_engine: str,
+    model: str | None = None,
+    config: dict[str, str] | None = None,
+) -> str:
+    """Resolve a model for the selected AI engine."""
+    saved_config = config if config is not None else load_config()
+
+    if ai_engine == "claude":
+        return model or saved_config.get("model") or CLAUDE_MODEL
+
+    candidate = model or saved_config.get("model") or CODEX_MODEL
+    normalized = candidate.lower()
+    if normalized == "latest":
+        return CODEX_MODEL
+    if normalized in CLAUDE_MODEL_ALIASES:
+        print(
+            f"Warning: model '{candidate}' is not compatible with Codex; "
+            f"using {CODEX_MODEL}.",
+            file=sys.stderr,
+        )
+        return CODEX_MODEL
+    return candidate
+
+
+def resolve_summary_metadata(
+    model: str | None = None,
+    ai_engine: str | None = None,
+    config: dict[str, str] | None = None,
+) -> SummaryMetadata:
+    saved_config = config if config is not None else load_config()
+    resolved_engine = resolve_ai_engine(ai_engine, saved_config)
+    resolved_model = resolve_model(resolved_engine, model, saved_config)
+    return SummaryMetadata(ai_engine=resolved_engine, model=resolved_model)
+
+
+def build_summary_prompt(transcript_text: str, title: str) -> str:
+    return f"""You are an expert content analyst. Your job is to distill a YouTube video transcript into a dense, actionable reference document. The reader is busy — they want the gold, not the fluff.
 
 Video title: {title}
 
@@ -84,11 +190,49 @@ IMPORTANT RULES:
 {transcript_text}
 </transcript>"""
 
+
+def render_prompt_template(
+    template: str,
+    *,
+    transcript_text: str,
+    title: str,
+    video_id: str,
+) -> str:
+    return (
+        template.replace("{title}", title)
+        .replace("{video_url}", f"https://youtube.com/watch?v={video_id}")
+        .replace("{transcript_text}", transcript_text)
+    )
+
+
+def build_brief_summary_prompt(
+    transcript_text: str,
+    title: str,
+    video_id: str,
+    config: dict[str, str] | None = None,
+) -> str:
+    saved_config = config if config is not None else load_config()
+    template = saved_config.get(BRIEF_SUMMARY_PROMPT_KEY, DEFAULT_BRIEF_SUMMARY_PROMPT)
+    return render_prompt_template(
+        template,
+        transcript_text=transcript_text,
+        title=title,
+        video_id=video_id,
+    )
+
+
+def run_claude(prompt: str, model: str) -> str:
+    if not shutil.which("claude"):
+        raise FileNotFoundError(
+            "claude CLI not found. Install Claude Code and run `claude login`.\n"
+            "See: https://docs.anthropic.com/en/docs/claude-code"
+        )
+
     result = subprocess.run(
         [
             "claude",
             "--model",
-            model or load_config().get("model", CLAUDE_MODEL),
+            model,
             "-p",
             prompt,
         ],
@@ -99,25 +243,152 @@ IMPORTANT RULES:
     return result.stdout.strip()
 
 
-def build_summary_md(summary_text: str, title: str, video_id: str) -> str:
-    url = f"https://youtube.com/watch?v={video_id}"
-    today = datetime.now().astimezone().isoformat(timespec="seconds")
+def run_codex(prompt: str, model: str) -> str:
+    if not shutil.which("codex"):
+        raise FileNotFoundError(
+            "codex CLI not found. Install Codex and run `codex login`.\n"
+            "See: https://developers.openai.com/codex/cli"
+        )
 
-    header = (
-        f"**URL**: {url}\n"
-        f"**Generated**: {today}\n"
-        f"\n"
-        f"---\n\n"
+    result = subprocess.run(
+        [
+            "codex",
+            "exec",
+            "--model",
+            model,
+            "-c",
+            f'model_reasoning_effort="{CODEX_REASONING_EFFORT}"',
+            "-",
+        ],
+        input=prompt,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip()
+
+
+def run_prompt(prompt: str, metadata: SummaryMetadata) -> str:
+    if metadata.ai_engine == "claude":
+        return run_claude(prompt, metadata.model)
+    return run_codex(prompt, metadata.model)
+
+
+def summarize_brief(
+    transcript_text: str,
+    title: str,
+    video_id: str,
+    model: str | None = None,
+    ai_engine: str | None = None,
+    metadata: SummaryMetadata | None = None,
+) -> str:
+    """Call the selected AI engine to create a brief orientation summary."""
+    metadata = metadata or resolve_summary_metadata(model=model, ai_engine=ai_engine)
+    prompt = build_brief_summary_prompt(transcript_text, title, video_id)
+    return run_prompt(prompt, metadata)
+
+
+def summarize(
+    transcript_text: str,
+    title: str,
+    model: str | None = None,
+    ai_engine: str | None = None,
+    metadata: SummaryMetadata | None = None,
+) -> str:
+    """Call the selected AI engine to summarize a transcript."""
+    metadata = metadata or resolve_summary_metadata(model=model, ai_engine=ai_engine)
+    prompt = build_summary_prompt(transcript_text, title)
+    return run_prompt(prompt, metadata)
+
+
+def build_summary_md(
+    summary_text: str,
+    title: str,
+    video_id: str,
+    ai_engine: str | None = None,
+    model: str | None = None,
+    generated_at: str | None = None,
+) -> str:
+    """Build the persisted summary markdown without duplicate display metadata."""
+    return strip_summary_header(summary_text)
+
+
+def strip_summary_header(summary_text: str) -> str:
+    """Remove the generated summary title/metadata block from markdown."""
+    original = summary_text.strip()
+    lines = original.splitlines()
+    if lines and lines[0].startswith("# "):
+        lines = lines[1:]
+        if not any(line.strip() for line in lines):
+            return original + "\n"
+
+    while lines and not lines[0].strip():
+        lines = lines[1:]
+
+    metadata_prefixes = (
+        "**URL**:",
+        "**Generated**:",
+        "**AI Engine**:",
+        "**Model**:",
+    )
+    while lines and lines[0].startswith(metadata_prefixes):
+        lines = lines[1:]
+
+    while lines and not lines[0].strip():
+        lines = lines[1:]
+
+    if lines and lines[0].strip() == "---":
+        lines = lines[1:]
+        while lines and not lines[0].strip():
+            lines = lines[1:]
+
+    return "\n".join(lines).strip() + "\n"
+
+
+def save_summary(
+    folder: Path,
+    summary_text: str,
+    title: str,
+    video_id: str,
+    ai_engine: str | None = None,
+    model: str | None = None,
+):
+    generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
+    content = build_summary_md(
+        summary_text,
+        title,
+        video_id,
+        ai_engine,
+        model,
+        generated_at,
+    )
+    (folder / "summary.md").write_text(content, encoding="utf-8")
+    update_video_metadata(
+        folder,
+        {
+            "aiEngine": ai_engine,
+            "model": model,
+            "summaryGeneratedAt": generated_at,
+        },
     )
 
-    # The prompt produces a full markdown doc starting with "# title".
-    # Insert the metadata right after the first heading line.
-    lines = summary_text.split("\n", 1)
-    if len(lines) == 2:
-        return f"{lines[0]}\n\n{header}{lines[1]}\n"
-    return f"{summary_text}\n\n{header}"
 
-
-def save_summary(folder: Path, summary_text: str, title: str, video_id: str):
-    content = build_summary_md(summary_text, title, video_id)
-    (folder / "summary.md").write_text(content, encoding="utf-8")
+def save_brief_summary(
+    folder: Path,
+    brief_summary_text: str,
+    ai_engine: str | None = None,
+    model: str | None = None,
+):
+    generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
+    (folder / "brief_summary.md").write_text(
+        brief_summary_text.strip() + "\n",
+        encoding="utf-8",
+    )
+    update_video_metadata(
+        folder,
+        {
+            "aiEngine": ai_engine,
+            "model": model,
+            "briefSummaryGeneratedAt": generated_at,
+        },
+    )

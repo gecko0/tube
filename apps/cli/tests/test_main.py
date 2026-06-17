@@ -1,11 +1,14 @@
+import json
 from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
 
 from yt.main import (
+    add_video,
     cli,
     delete_video_cmd,
+    parse_ai_options,
     parse_config_options,
     parse_model_options,
     resolve_ref,
@@ -24,12 +27,20 @@ class TestParseConfigOptions:
 
     def test_multiple_keys(self):
         result = parse_config_options(
-            ("--model", "opus", "--convex_url", "https://example.convex.site")
+            (
+                "--model",
+                "opus",
+                "--convex_url",
+                "https://example.convex.site",
+                "--ai_engine",
+                "codex",
+            )
         )
 
         assert result == {
             "model": "opus",
             "convex_url": "https://example.convex.site",
+            "ai_engine": "codex",
         }
 
 
@@ -65,6 +76,51 @@ class TestParseModelOptions:
         model, args = parse_model_options(("list", "--limit", "3"))
 
         assert model is None
+        assert args == ("list", "--limit", "3")
+
+
+# ---------------------------------------------------------------------------
+# parse_ai_options
+# ---------------------------------------------------------------------------
+class TestParseAiOptions:
+    def test_ai_engine_with_space(self):
+        model, ai_engine, args = parse_ai_options(
+            ("--ai_engine", "codex", "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        )
+
+        assert model is None
+        assert ai_engine == "codex"
+        assert args == ("https://www.youtube.com/watch?v=dQw4w9WgXcQ",)
+
+    def test_ai_engine_with_equals(self):
+        model, ai_engine, args = parse_ai_options(
+            ("--ai_engine=codex", "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        )
+
+        assert model is None
+        assert ai_engine == "codex"
+        assert args == ("https://www.youtube.com/watch?v=dQw4w9WgXcQ",)
+
+    def test_ai_engine_and_model_options(self):
+        model, ai_engine, args = parse_ai_options(
+            (
+                "--ai_engine",
+                "codex",
+                "--model",
+                "latest",
+                "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            )
+        )
+
+        assert model == "latest"
+        assert ai_engine == "codex"
+        assert args == ("https://www.youtube.com/watch?v=dQw4w9WgXcQ",)
+
+    def test_stops_before_command_options(self):
+        model, ai_engine, args = parse_ai_options(("list", "--limit", "3"))
+
+        assert model is None
+        assert ai_engine is None
         assert args == ("list", "--limit", "3")
 
 
@@ -205,7 +261,7 @@ class TestAddVideoModelOptions:
         result = CliRunner().invoke(cli, ["--model", "opus", url])
 
         assert result.exit_code == 0
-        mock_add_video.assert_called_once_with(url, model="opus")
+        mock_add_video.assert_called_once_with(url, model="opus", ai_engine=None)
 
     @patch("yt.main.add_video")
     def test_model_equals_option_passes_model_to_add_video(self, mock_add_video):
@@ -214,7 +270,7 @@ class TestAddVideoModelOptions:
         result = CliRunner().invoke(cli, ["--model=opus", url])
 
         assert result.exit_code == 0
-        mock_add_video.assert_called_once_with(url, model="opus")
+        mock_add_video.assert_called_once_with(url, model="opus", ai_engine=None)
 
     @patch("yt.main.add_video")
     def test_alias_option_passes_model_to_add_video(self, mock_add_video):
@@ -223,4 +279,117 @@ class TestAddVideoModelOptions:
         result = CliRunner().invoke(cli, ["--opus", url])
 
         assert result.exit_code == 0
-        mock_add_video.assert_called_once_with(url, model="opus")
+        mock_add_video.assert_called_once_with(url, model="opus", ai_engine=None)
+
+    @patch("yt.main.add_video")
+    def test_ai_engine_option_passes_ai_engine_to_add_video(self, mock_add_video):
+        url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+        result = CliRunner().invoke(cli, ["--ai_engine", "codex", url])
+
+        assert result.exit_code == 0
+        mock_add_video.assert_called_once_with(url, model=None, ai_engine="codex")
+
+    @patch("yt.main.add_video")
+    def test_ai_engine_equals_option_passes_ai_engine_to_add_video(self, mock_add_video):
+        url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+        result = CliRunner().invoke(cli, ["--ai_engine=codex", url])
+
+        assert result.exit_code == 0
+        mock_add_video.assert_called_once_with(url, model=None, ai_engine="codex")
+
+    @patch("yt.main.add_video")
+    def test_ai_engine_and_model_pass_to_add_video(self, mock_add_video):
+        url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+        result = CliRunner().invoke(cli, ["--ai_engine", "codex", "--model", "latest", url])
+
+        assert result.exit_code == 0
+        mock_add_video.assert_called_once_with(url, model="latest", ai_engine="codex")
+
+
+# ---------------------------------------------------------------------------
+# add_video flow
+# ---------------------------------------------------------------------------
+class TestAddVideoFlow:
+    def test_add_video_generates_brief_and_detailed_summaries(
+        self,
+        transcripts_dir,
+        frozen_date,
+        sample_entries,
+    ):
+        url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+        with (
+            patch(
+                "yt.main.fetch_metadata",
+                return_value={"title": "My Video", "author": "Author"},
+            ),
+            patch("yt.main.fetch_transcript", return_value=sample_entries),
+            patch("yt.main.is_connected", return_value=False),
+            patch("yt.main.summarize_brief", return_value="# Brief"),
+            patch("yt.main.summarize", return_value="# Detailed"),
+        ):
+            add_video(url)
+
+        folder = transcripts_dir / "2025-06-15T103045 - dQw4w9WgXcQ - My Video"
+        assert (folder / "brief_summary.md").read_text(encoding="utf-8") == "# Brief\n"
+        assert "# Detailed" in (folder / "summary.md").read_text(encoding="utf-8")
+
+        metadata = json.loads((folder / "metadata.json").read_text(encoding="utf-8"))
+        assert metadata["aiEngine"] == "claude"
+        assert metadata["model"] == "sonnet"
+        assert metadata["briefSummaryGeneratedAt"] == "2025-06-15T10:30:45-04:00"
+        assert metadata["summaryGeneratedAt"] == "2025-06-15T10:30:45-04:00"
+
+    def test_add_video_brief_pass_receives_raw_timestamp_seconds(
+        self,
+        transcripts_dir,
+        frozen_date,
+        sample_entries,
+    ):
+        url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+        with (
+            patch(
+                "yt.main.fetch_metadata",
+                return_value={"title": "My Video", "author": "Author"},
+            ),
+            patch("yt.main.fetch_transcript", return_value=sample_entries),
+            patch("yt.main.is_connected", return_value=False),
+            patch("yt.main.summarize_brief", return_value="# Brief") as mock_brief,
+            patch("yt.main.summarize", return_value="# Detailed"),
+        ):
+            add_video(url)
+
+        brief_transcript_text = mock_brief.call_args.args[0]
+        assert "[00:00 | t=0s] Hello and welcome." in brief_transcript_text
+        assert "[01:05 | t=65s] Today we talk about Python." in brief_transcript_text
+
+    def test_add_video_uploads_brief_summary_when_connected(
+        self,
+        transcripts_dir,
+        frozen_date,
+        sample_entries,
+    ):
+        url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+        with (
+            patch(
+                "yt.main.fetch_metadata",
+                return_value={"title": "My Video", "author": "Author"},
+            ),
+            patch("yt.main.fetch_transcript", return_value=sample_entries),
+            patch("yt.main.is_connected", return_value=True),
+            patch("yt.main.summarize_brief", return_value="# Brief"),
+            patch("yt.main.summarize", return_value="# Detailed"),
+            patch("yt.main.upload_video", return_value=True) as mock_upload,
+        ):
+            add_video(url)
+
+        assert mock_upload.call_args.kwargs["brief_summary_md"] == "# Brief\n"
+        assert "# Detailed" in mock_upload.call_args.kwargs["summary_md"]
+        assert mock_upload.call_args.kwargs["metadata"]["briefSummaryGeneratedAt"] == (
+            "2025-06-15T10:30:45-04:00"
+        )

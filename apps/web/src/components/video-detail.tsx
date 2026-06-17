@@ -10,7 +10,62 @@ interface VideoDetailProps {
   detail: VideoDetailType
 }
 
+function stripSummaryHeader(markdown: string | null): string | null {
+  if (!markdown) {
+    return null
+  }
+
+  const lines = markdown.trim().split("\n")
+  if (lines[0]?.startsWith("# ")) {
+    lines.shift()
+  }
+
+  while (lines[0]?.trim() === "") {
+    lines.shift()
+  }
+
+  const metadataPrefixes = [
+    "**URL**:",
+    "**Generated**:",
+    "**AI Engine**:",
+    "**Model**:",
+  ]
+  while (
+    lines.length > 0 &&
+    metadataPrefixes.some((prefix) => lines[0].startsWith(prefix))
+  ) {
+    lines.shift()
+  }
+
+  while (lines[0]?.trim() === "") {
+    lines.shift()
+  }
+
+  if (lines[0]?.trim() === "---") {
+    lines.shift()
+    while (lines[0]?.trim() === "") {
+      lines.shift()
+    }
+  }
+
+  return lines.join("\n").trim()
+}
+
 export function VideoDetail({ detail }: VideoDetailProps) {
+  const metadataItems = [
+    formatDate(detail.date),
+    detail.metadata?.author,
+    detail.metadata?.aiEngine && detail.metadata?.model
+      ? `${detail.metadata.aiEngine} / ${detail.metadata.model}`
+      : detail.metadata?.aiEngine || detail.metadata?.model,
+  ].filter(Boolean)
+  const summaryMd = stripSummaryHeader(detail.summaryMd)
+  const defaultTab = detail.briefSummaryMd
+    ? "brief"
+    : summaryMd
+      ? "summary"
+      : "transcript"
+
   return (
     <div className="flex flex-col gap-6 p-6 max-w-4xl mx-auto w-full">
       {/* Embedded YouTube player */}
@@ -37,26 +92,38 @@ export function VideoDetail({ detail }: VideoDetailProps) {
           </a>
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {formatDate(detail.date)}
+          {metadataItems.join(" | ")}
         </p>
       </div>
 
       <Separator />
 
       {/* Tabs */}
-      <Tabs defaultValue={detail.summaryMd ? "summary" : "transcript"}>
+      <Tabs defaultValue={defaultTab}>
         <TabsList variant="subtle">
-          <TabsTrigger value="summary" disabled={!detail.summaryMd}>
+          <TabsTrigger value="brief" disabled={!detail.briefSummaryMd}>
+            Brief
+          </TabsTrigger>
+          <TabsTrigger value="summary" disabled={!summaryMd}>
             Summary
           </TabsTrigger>
           <TabsTrigger value="transcript" disabled={!detail.transcriptMd}>
             Transcript
           </TabsTrigger>
         </TabsList>
-        <TabsContent value="summary" className="mt-4">
-          {detail.summaryMd ? (
+        <TabsContent value="brief" className="mt-4">
+          {detail.briefSummaryMd ? (
             <Streamdown plugins={{ code }}>
-              {detail.summaryMd}
+              {detail.briefSummaryMd}
+            </Streamdown>
+          ) : (
+            <p className="text-muted-foreground">No brief summary available.</p>
+          )}
+        </TabsContent>
+        <TabsContent value="summary" className="mt-4">
+          {summaryMd ? (
+            <Streamdown plugins={{ code }}>
+              {summaryMd}
             </Streamdown>
           ) : (
             <p className="text-muted-foreground">No summary available.</p>

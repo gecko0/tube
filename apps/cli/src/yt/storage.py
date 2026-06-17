@@ -73,3 +73,10 @@ def read_summary(folder: Path) -> str | None:
     if path.exists():
         return path.read_text(encoding="utf-8")
     return None
+
+
+def read_brief_summary(folder: Path) -> str | None:
+    path = folder / "brief_summary.md"
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+    return None

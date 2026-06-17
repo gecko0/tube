@@ -69,6 +69,8 @@ def upload_video(
     title: str,
     transcript_md: str,
     summary_md: str | None,
+    brief_summary_md: str | None = None,
+    metadata: dict | None = None,
 ) -> bool:
     """Upload video data to Convex. Returns True on success, False on failure."""
     config = load_config()
@@ -88,6 +90,10 @@ def upload_video(
     }
     if summary_md:
         payload["summaryMd"] = summary_md
+    if brief_summary_md:
+        payload["briefSummaryMd"] = brief_summary_md
+    if metadata:
+        payload["metadata"] = metadata
 
     try:
         resp = requests.post(

@@ -6,6 +6,7 @@ import requests
 from youtube_transcript_api import YouTubeTranscriptApi
 
 from .config import MAX_TITLE_LENGTH, OEMBED_URL, TRANSCRIPTS_DIR
+from .metadata import build_video_metadata, write_video_metadata
 
 
 def extract_video_id(url: str) -> str:
@@ -98,6 +99,16 @@ def build_transcript_md(
     return "\n".join(lines) + "\n"
 
 
+def build_prompt_transcript(entries: list[dict]) -> str:
+    """Build transcript text with raw timestamp seconds for prompt use."""
+    lines = []
+    for entry in entries:
+        seconds = int(entry["start"])
+        ts = format_timestamp(seconds)
+        lines.append(f"[{ts} | t={seconds}s] {entry['text']}")
+    return "\n".join(lines)
+
+
 def save_transcript(
     video_id: str, title: str, author: str, entries: list[dict]
 ) -> Path:
@@ -109,4 +120,13 @@ def save_transcript(
 
     content = build_transcript_md(entries, title, author, video_id, now)
     (folder / "transcript.md").write_text(content, encoding="utf-8")
+    write_video_metadata(
+        folder,
+        build_video_metadata(
+            video_id=video_id,
+            title=title,
+            author=author,
+            fetched_at=now.isoformat(timespec="seconds"),
+        ),
+    )
     return folder

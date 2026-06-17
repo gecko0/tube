@@ -1,8 +1,21 @@
 import { query, mutation } from "./_generated/server";
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
+import { videoMetadataValidator } from "./validators";
 
 const videoViewValidator = v.union(v.literal("active"), v.literal("archived"));
+const serializeMetadata = (metadata: {
+  version?: number;
+  videoId?: string;
+  url?: string;
+  title?: string;
+  author?: string;
+  fetchedAt?: string;
+  aiEngine?: string;
+  model?: string;
+  briefSummaryGeneratedAt?: string;
+  summaryGeneratedAt?: string;
+} | undefined) => metadata ?? null;
 
 export const listPage = query({
   args: {
@@ -36,6 +49,7 @@ export const listPage = query({
         title: video.title,
         hasSummary: video.summaryMd !== undefined,
         thumbnailUrl: video.thumbnailUrl,
+        metadata: serializeMetadata(video.metadata),
         archivedAt: video.archivedAt,
       })),
     };
@@ -51,8 +65,10 @@ export const get = query({
       date: v.string(),
       title: v.string(),
       summaryMd: v.union(v.string(), v.null()),
+      briefSummaryMd: v.union(v.string(), v.null()),
       transcriptMd: v.string(),
       thumbnailUrl: v.string(),
+      metadata: v.union(videoMetadataValidator, v.null()),
       archivedAt: v.optional(v.number()),
     }),
     v.null()
@@ -74,8 +90,10 @@ export const get = query({
       date: video.date,
       title: video.title,
       summaryMd: video.summaryMd ?? null,
+      briefSummaryMd: video.briefSummaryMd ?? null,
       transcriptMd: video.transcriptMd,
       thumbnailUrl: video.thumbnailUrl,
+      metadata: serializeMetadata(video.metadata),
       archivedAt: video.archivedAt,
     };
   },
