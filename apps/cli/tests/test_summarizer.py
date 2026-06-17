@@ -85,6 +85,26 @@ class TestSummarize:
 
         assert mock_run.call_args[0][0][1:4] == ["--model", "fable", "-p"]
 
+    @patch("yt.summarizer.subprocess.run")
+    @patch("yt.summarizer.shutil.which", return_value="/usr/bin/claude")
+    def test_uses_model_from_config(self, mock_which, mock_run):
+        mock_run.return_value = MagicMock(stdout="output")
+
+        with patch("yt.summarizer.load_config", return_value={"model": "opus"}):
+            summarize("text", "title")
+
+        assert mock_run.call_args[0][0][1:4] == ["--model", "opus", "-p"]
+
+    @patch("yt.summarizer.subprocess.run")
+    @patch("yt.summarizer.shutil.which", return_value="/usr/bin/claude")
+    def test_model_argument_overrides_saved_config(self, mock_which, mock_run):
+        mock_run.return_value = MagicMock(stdout="output")
+
+        with patch("yt.summarizer.load_config", return_value={"model": "opus"}):
+            summarize("text", "title", model="sonnet")
+
+        assert mock_run.call_args[0][0][1:4] == ["--model", "sonnet", "-p"]
+
     @patch("yt.summarizer.shutil.which", return_value=None)
     def test_claude_not_found_raises(self, mock_which):
         with pytest.raises(FileNotFoundError, match="claude CLI not found"):

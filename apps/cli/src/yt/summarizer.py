@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .config import CLAUDE_MODEL
+from .cloud import load_config
 
 
 def summarize(transcript_text: str, title: str, model: str | None = None) -> str:
@@ -84,7 +85,13 @@ IMPORTANT RULES:
 </transcript>"""
 
     result = subprocess.run(
-        ["claude", "--model", model or CLAUDE_MODEL, "-p", prompt],
+        [
+            "claude",
+            "--model",
+            model or load_config().get("model", CLAUDE_MODEL),
+            "-p",
+            prompt,
+        ],
         capture_output=True,
         text=True,
         check=True,

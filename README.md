@@ -75,6 +75,9 @@ Usage: yt [ARGS]...
     yt delete,  yt d [video_id]    Delete transcript & summary (latest if omitted)
     yt web,     yt w [port]   Open web viewer (default port 8765)
     yt connect  <key>         Connect to cloud with API key
+    yt config                 Show saved config
+    yt config --model opus    Set default summarization model
+    yt config --api_key KEY   Set cloud API key
     yt sync                   Upload latest 100 local videos missing from cloud
     yt sync --all             Upload all local videos missing from cloud
     yt sync --limit N         Upload latest N local videos missing from cloud
@@ -164,6 +167,16 @@ yt --model opus https://www.youtube.com/watch?v=dQw4w9WgXcQ
 yt --model=opus https://www.youtube.com/watch?v=dQw4w9WgXcQ
 yt --opus https://www.youtube.com/watch?v=dQw4w9WgXcQ
 ```
+
+To save a default model in `~/.yt/config.json`:
+
+```bash
+yt config --model opus
+```
+
+The CLI `--model` option overrides the saved config for that run.
+
+Model precedence is: CLI option, saved config, `YT_CLAUDE_MODEL`, then `sonnet`.
 
 ### List saved transcripts
 
@@ -282,6 +295,12 @@ To change the summarization model, set the `YT_CLAUDE_MODEL` environment variabl
 
 ```bash
 export YT_CLAUDE_MODEL=opus
+```
+
+Or save it in `~/.yt/config.json`:
+
+```bash
+yt config --model opus
 ```
 
 ## Supported URL formats

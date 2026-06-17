@@ -3,7 +3,34 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
-from yt.main import cli, delete_video_cmd, parse_model_options, resolve_ref
+from yt.main import (
+    cli,
+    delete_video_cmd,
+    parse_config_options,
+    parse_model_options,
+    resolve_ref,
+)
+
+
+# ---------------------------------------------------------------------------
+# parse_config_options
+# ---------------------------------------------------------------------------
+class TestParseConfigOptions:
+    def test_key_with_space(self):
+        assert parse_config_options(("--model", "opus")) == {"model": "opus"}
+
+    def test_key_with_equals(self):
+        assert parse_config_options(("--api_key=secret",)) == {"api_key": "secret"}
+
+    def test_multiple_keys(self):
+        result = parse_config_options(
+            ("--model", "opus", "--convex_url", "https://example.convex.site")
+        )
+
+        assert result == {
+            "model": "opus",
+            "convex_url": "https://example.convex.site",
+        }
 
 
 # ---------------------------------------------------------------------------

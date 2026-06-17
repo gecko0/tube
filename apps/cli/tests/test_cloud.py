@@ -204,6 +204,71 @@ class TestConnectDisconnect:
 
 
 # ---------------------------------------------------------------------------
+# CLI config command
+# ---------------------------------------------------------------------------
+class TestConfigCommand:
+    def test_sets_model(self, config_path):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        result = CliRunner().invoke(cli, ["config", "--model", "opus"])
+
+        assert result.exit_code == 0
+        assert "Set" in result.output
+        config = json.loads(config_path.read_text())
+        assert config["model"] == "opus"
+
+    def test_sets_api_key_with_underscore_option(self, config_path):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        result = CliRunner().invoke(cli, ["config", "--api_key", "my-secret-key"])
+
+        assert result.exit_code == 0
+        config = json.loads(config_path.read_text())
+        assert config["api_key"] == "my-secret-key"
+        assert "my-" in result.output
+        assert "my-secret-key" not in result.output
+
+    def test_sets_multiple_values(self, config_path):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        result = CliRunner().invoke(
+            cli,
+            [
+                "config",
+                "--model=opus",
+                "--convex_url",
+                "https://custom.convex.site",
+            ],
+        )
+
+        assert result.exit_code == 0
+        config = json.loads(config_path.read_text())
+        assert config["model"] == "opus"
+        assert config["convex_url"] == "https://custom.convex.site"
+
+    def test_shows_saved_config(self, config_path):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        save_config({"api_key": "my-secret-key", "model": "opus"})
+
+        result = CliRunner().invoke(cli, ["config"])
+
+        assert result.exit_code == 0
+        assert "model" in result.output
+        assert "opus" in result.output
+        assert "api_key" in result.output
+        assert "my-secret-key" not in result.output
+
+
+# ---------------------------------------------------------------------------
 # CLI sync command
 # ---------------------------------------------------------------------------
 class TestSync:

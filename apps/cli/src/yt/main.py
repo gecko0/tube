@@ -30,6 +30,8 @@ from .transcript import extract_video_id, fetch_metadata, fetch_transcript, save
 
 console = Console()
 DEFAULT_BATCH_SIZE = 100
+CONFIG_KEYS = {"api_key", "convex_url", "model"}
+SECRET_CONFIG_KEYS = {"api_key"}
 MODEL_ALIAS_FLAGS = {
     "--sonnet": "sonnet",
     "--opus": "opus",
@@ -102,6 +104,75 @@ def parse_model_options(args: tuple[str, ...]) -> tuple[str | None, tuple[str, .
             break
 
     return model, tuple(remaining)
+
+
+def parse_config_options(parts: tuple[str, ...] | list[str]) -> dict[str, str]:
+    """Parse --key value and --key=value options for persisted app config."""
+    updates: dict[str, str] = {}
+    i = 0
+    while i < len(parts):
+        part = parts[i]
+        if not part.startswith("--"):
+            console.print(f"[red]Unknown argument for yt config:[/red] {part}")
+            console.print(
+                "[red]Usage:[/red] yt config "
+                "[--api_key KEY] [--convex_url URL] [--model MODEL]"
+            )
+            sys.exit(1)
+
+        raw_key = part[2:]
+        if "=" in raw_key:
+            key, value = raw_key.split("=", 1)
+            if not value:
+                console.print(f"[red]Missing value for --{key}.[/red]")
+                sys.exit(1)
+            i += 1
+        else:
+            key = raw_key
+            if i + 1 >= len(parts) or parts[i + 1].startswith("--"):
+                console.print(f"[red]Missing value for --{key}.[/red]")
+                sys.exit(1)
+            value = parts[i + 1]
+            i += 2
+
+        if key not in CONFIG_KEYS:
+            console.print(f"[red]Unknown config key:[/red] {key}")
+            console.print("[dim]Supported keys: api_key, convex_url, model[/dim]")
+            sys.exit(1)
+
+        updates[key] = value
+
+    return updates
+
+
+def format_config_value(key: str, value: str) -> str:
+    if key in SECRET_CONFIG_KEYS and value:
+        return f"{value[:4]}...{value[-4:]}" if len(value) > 8 else "****"
+    return value
+
+
+def config_cmd(parts: tuple[str, ...] | list[str]):
+    """View or update persisted app config."""
+    config = load_config()
+    updates = parse_config_options(parts)
+
+    if updates:
+        config.update(updates)
+        save_config(config)
+        for key, value in updates.items():
+            console.print(f"[green]Set[/green] {key}={format_config_value(key, value)}")
+        return
+
+    if not config:
+        console.print("[dim]No config saved yet.[/dim]")
+        return
+
+    table = Table(title="Config")
+    table.add_column("Key")
+    table.add_column("Value")
+    for key in sorted(config):
+        table.add_row(key, format_config_value(key, str(config[key])))
+    console.print(table)
 
 
 def resolve_ref(ref: str | None) -> tuple[Path, str]:
@@ -448,6 +519,9 @@ def cli(args):
       yt delete,  yt d [video_id]    Delete transcript & summary (latest if omitted)
       yt web,     yt w [port]   Open web viewer (default port 8765)
       yt connect  <key>         Connect to cloud with API key
+      yt config                 Show saved config
+      yt config --model opus    Set default summarization model
+      yt config --api_key KEY   Set cloud API key
       yt sync                   Upload latest 100 local videos missing from cloud
       yt sync --all             Upload all local videos missing from cloud
       yt sync --limit N         Upload latest N local videos missing from cloud
@@ -462,7 +536,10 @@ def cli(args):
 
     model, args = parse_model_options(args)
     if not args:
-        console.print("[red]Usage:[/red] yt [--model <model> | --sonnet | --opus | --fable] <url>")
+        console.print(
+            "[red]Usage:[/red] yt "
+            "[--model <model> | --sonnet | --opus | --fable] <url>"
+        )
         sys.exit(1)
 
     cmd = args[0]
@@ -490,6 +567,8 @@ def cli(args):
         config["api_key"] = ref
         save_config(config)
         console.print("[green]Connected![/green] API key saved to ~/.yt/config.json")
+    elif cmd == "config":
+        config_cmd(args[1:])
     elif cmd == "sync":
         limit = parse_batch_options(args[1:], "yt sync", DEFAULT_BATCH_SIZE)
         sync_missing_videos(limit)
