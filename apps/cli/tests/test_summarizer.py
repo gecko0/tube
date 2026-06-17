@@ -52,7 +52,7 @@ class TestSummarize:
         mock_run.assert_called_once()
         args = mock_run.call_args
         assert args[0][0][0] == "claude"
-        assert args[0][0][1] == "-p"
+        assert args[0][0][1:4] == ["--model", "sonnet", "-p"]
 
     @patch("yt.summarizer.subprocess.run")
     @patch("yt.summarizer.shutil.which", return_value="/usr/bin/claude")
@@ -60,9 +60,30 @@ class TestSummarize:
         mock_run.return_value = MagicMock(stdout="output")
         summarize("my transcript content", "Video Title Here")
 
-        prompt = mock_run.call_args[0][0][2]
+        prompt = mock_run.call_args[0][0][4]
         assert "Video Title Here" in prompt
         assert "my transcript content" in prompt
+
+    @patch("yt.summarizer.subprocess.run")
+    @patch("yt.summarizer.shutil.which", return_value="/usr/bin/claude")
+    def test_uses_configured_claude_model(self, mock_which, mock_run, monkeypatch):
+        import yt.summarizer
+
+        monkeypatch.setattr(yt.summarizer, "CLAUDE_MODEL", "opus")
+        mock_run.return_value = MagicMock(stdout="output")
+
+        summarize("text", "title")
+
+        assert mock_run.call_args[0][0][1:4] == ["--model", "opus", "-p"]
+
+    @patch("yt.summarizer.subprocess.run")
+    @patch("yt.summarizer.shutil.which", return_value="/usr/bin/claude")
+    def test_model_argument_overrides_config(self, mock_which, mock_run):
+        mock_run.return_value = MagicMock(stdout="output")
+
+        summarize("text", "title", model="fable")
+
+        assert mock_run.call_args[0][0][1:4] == ["--model", "fable", "-p"]
 
     @patch("yt.summarizer.shutil.which", return_value=None)
     def test_claude_not_found_raises(self, mock_which):

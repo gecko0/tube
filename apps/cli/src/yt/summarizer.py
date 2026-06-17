@@ -3,9 +3,11 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from .config import CLAUDE_MODEL
 
-def summarize(transcript_text: str, title: str) -> str:
-    """Call claude -p to summarize a transcript. Returns the summary text."""
+
+def summarize(transcript_text: str, title: str, model: str | None = None) -> str:
+    """Call claude to summarize a transcript. Returns the summary text."""
     if not shutil.which("claude"):
         raise FileNotFoundError(
             "claude CLI not found. Install Claude Code and run `claude login`.\n"
@@ -82,7 +84,7 @@ IMPORTANT RULES:
 </transcript>"""
 
     result = subprocess.run(
-        ["claude", "-p", prompt],
+        ["claude", "--model", model or CLAUDE_MODEL, "-p", prompt],
         capture_output=True,
         text=True,
         check=True,

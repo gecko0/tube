@@ -8,3 +8,5 @@ TRANSCRIPTS_DIR = Path(
 OEMBED_URL = "https://www.youtube.com/oembed?url={video_url}&format=json"
 
 MAX_TITLE_LENGTH = 60
+
+CLAUDE_MODEL = os.environ.get("YT_CLAUDE_MODEL", "sonnet")

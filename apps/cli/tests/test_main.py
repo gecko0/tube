@@ -3,7 +3,42 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
-from yt.main import cli, delete_video_cmd, resolve_ref
+from yt.main import cli, delete_video_cmd, parse_model_options, resolve_ref
+
+
+# ---------------------------------------------------------------------------
+# parse_model_options
+# ---------------------------------------------------------------------------
+class TestParseModelOptions:
+    def test_model_with_space(self):
+        model, args = parse_model_options(
+            ("--model", "opus", "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        )
+
+        assert model == "opus"
+        assert args == ("https://www.youtube.com/watch?v=dQw4w9WgXcQ",)
+
+    def test_model_with_equals(self):
+        model, args = parse_model_options(
+            ("--model=opus", "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        )
+
+        assert model == "opus"
+        assert args == ("https://www.youtube.com/watch?v=dQw4w9WgXcQ",)
+
+    def test_alias_flag(self):
+        model, args = parse_model_options(
+            ("--opus", "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        )
+
+        assert model == "opus"
+        assert args == ("https://www.youtube.com/watch?v=dQw4w9WgXcQ",)
+
+    def test_stops_before_command_options(self):
+        model, args = parse_model_options(("list", "--limit", "3"))
+
+        assert model is None
+        assert args == ("list", "--limit", "3")
 
 
 # ---------------------------------------------------------------------------
@@ -130,3 +165,35 @@ class TestListCommand:
         assert "vid00000105" in result.output
         assert "vid00000001" in result.output
         assert "Showing latest" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# add video model options
+# ---------------------------------------------------------------------------
+class TestAddVideoModelOptions:
+    @patch("yt.main.add_video")
+    def test_model_option_passes_model_to_add_video(self, mock_add_video):
+        url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+        result = CliRunner().invoke(cli, ["--model", "opus", url])
+
+        assert result.exit_code == 0
+        mock_add_video.assert_called_once_with(url, model="opus")
+
+    @patch("yt.main.add_video")
+    def test_model_equals_option_passes_model_to_add_video(self, mock_add_video):
+        url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+        result = CliRunner().invoke(cli, ["--model=opus", url])
+
+        assert result.exit_code == 0
+        mock_add_video.assert_called_once_with(url, model="opus")
+
+    @patch("yt.main.add_video")
+    def test_alias_option_passes_model_to_add_video(self, mock_add_video):
+        url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+        result = CliRunner().invoke(cli, ["--opus", url])
+
+        assert result.exit_code == 0
+        mock_add_video.assert_called_once_with(url, model="opus")

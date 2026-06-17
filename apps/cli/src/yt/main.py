@@ -30,6 +30,11 @@ from .transcript import extract_video_id, fetch_metadata, fetch_transcript, save
 
 console = Console()
 DEFAULT_BATCH_SIZE = 100
+MODEL_ALIAS_FLAGS = {
+    "--sonnet": "sonnet",
+    "--opus": "opus",
+    "--fable": "fable",
+}
 
 
 def parse_batch_options(
@@ -71,6 +76,34 @@ def parse_batch_options(
     return limit
 
 
+def parse_model_options(args: tuple[str, ...]) -> tuple[str | None, tuple[str, ...]]:
+    """Parse leading model options before the command or URL."""
+    model: str | None = None
+    remaining = list(args)
+
+    while remaining:
+        part = remaining[0]
+        if part in MODEL_ALIAS_FLAGS:
+            model = MODEL_ALIAS_FLAGS[part]
+            remaining.pop(0)
+        elif part == "--model":
+            if len(remaining) < 2 or remaining[1].startswith("--"):
+                console.print("[red]Usage:[/red] yt --model <model> <url>")
+                sys.exit(1)
+            model = remaining[1]
+            del remaining[:2]
+        elif part.startswith("--model="):
+            model = part.split("=", 1)[1]
+            if not model:
+                console.print("[red]Usage:[/red] yt --model=<model> <url>")
+                sys.exit(1)
+            remaining.pop(0)
+        else:
+            break
+
+    return model, tuple(remaining)
+
+
 def resolve_ref(ref: str | None) -> tuple[Path, str]:
     """Resolve a video ID or None for latest to a (folder, video_id) tuple."""
 
@@ -90,7 +123,7 @@ def resolve_ref(ref: str | None) -> tuple[Path, str]:
     return folder, ref
 
 
-def add_video(url: str, regenerate: bool = False):
+def add_video(url: str, regenerate: bool = False, model: str | None = None):
     """Core flow: fetch transcript, summarize, save."""
     try:
         video_id = extract_video_id(url)
@@ -135,7 +168,7 @@ def add_video(url: str, regenerate: bool = False):
     console.print("[dim]Summarizing with Claude...[/dim]")
     transcript_text = read_transcript(folder)
     try:
-        summary_text = summarize(transcript_text, title)
+        summary_text = summarize(transcript_text, title, model=model)
     except FileNotFoundError as e:
         console.print(f"[red]{e}[/red]")
         sys.exit(1)
@@ -405,6 +438,8 @@ def cli(args):
     Commands:
       yt                        Interactive mode
       yt <url>                  Fetch transcript & summarize a video
+      yt --model opus <url>     Summarize with a specific Claude model/alias
+      yt --opus <url>           Shortcut for yt --model opus <url>
       yt list,    yt l          List latest 100 saved transcripts
       yt list --all             List all saved transcripts
       yt list --limit N         List latest N saved transcripts
@@ -424,6 +459,11 @@ def cli(args):
     if not args:
         interactive_mode()
         return
+
+    model, args = parse_model_options(args)
+    if not args:
+        console.print("[red]Usage:[/red] yt [--model <model> | --sonnet | --opus | --fable] <url>")
+        sys.exit(1)
 
     cmd = args[0]
     ref = args[1] if len(args) > 1 else None
@@ -462,4 +502,4 @@ def cli(args):
         setup_shell()
     else:
         # Treat as a URL
-        add_video(cmd)
+        add_video(cmd, model=model)

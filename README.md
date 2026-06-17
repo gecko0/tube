@@ -35,6 +35,12 @@ claude login
 
 Follow the prompts to authenticate. Without this, transcript fetching still works but summarization will be skipped with a helpful error message.
 
+Summarization uses Claude Code's `sonnet` model alias by default. To use a different Claude Code model or alias, set `YT_CLAUDE_MODEL`:
+
+```bash
+export YT_CLAUDE_MODEL=opus
+```
+
 ### 4. Configure your shell
 
 ```bash
@@ -59,6 +65,8 @@ Usage: yt [ARGS]...
   Commands:
     yt                        Interactive mode
     yt <url>                  Fetch transcript & summarize a video
+    yt --model opus <url>     Summarize with a specific Claude model/alias
+    yt --opus <url>           Shortcut for yt --model opus <url>
     yt list,    yt l          List latest 100 saved transcripts
     yt list --all             List all saved transcripts
     yt list --limit N         List latest N saved transcripts
@@ -145,9 +153,17 @@ This will:
 1. Fetch video metadata (title, author) via YouTube oEmbed
 2. Download the transcript
 3. Save `transcript.md` to disk
-4. Summarize via `claude -p` and save `summary.md`
+4. Summarize via `claude --model sonnet -p` and save `summary.md`
 
 If the video was already fetched, you'll be asked whether to skip or regenerate.
+
+To use a different Claude model for one run:
+
+```bash
+yt --model opus https://www.youtube.com/watch?v=dQw4w9WgXcQ
+yt --model=opus https://www.youtube.com/watch?v=dQw4w9WgXcQ
+yt --opus https://www.youtube.com/watch?v=dQw4w9WgXcQ
+```
 
 ### List saved transcripts
 
@@ -262,6 +278,12 @@ To change the storage location, set the `YT_TRANSCRIPTS_DIR` environment variabl
 export YT_TRANSCRIPTS_DIR=~/my-transcripts
 ```
 
+To change the summarization model, set the `YT_CLAUDE_MODEL` environment variable:
+
+```bash
+export YT_CLAUDE_MODEL=opus
+```
+
 ## Supported URL formats
 
 - `https://www.youtube.com/watch?v=VIDEO_ID`
@@ -307,7 +329,7 @@ tube/
 2. **Metadata** — Fetches title and author via YouTube's free [oEmbed API](https://oembed.com/) (no API key needed)
 3. **Transcript** — Downloads captions using [youtube-transcript-api](https://github.com/jdepoix/youtube-transcript-api)
 4. **Storage** — Saves a timestamped `transcript.md` to `~/.yt/transcripts/`
-5. **Summarization** — Pipes the transcript to `claude -p` and saves `summary.md`
+5. **Summarization** — Pipes the transcript to `claude --model sonnet -p` by default and saves `summary.md`
 
 ## Contributing
 
