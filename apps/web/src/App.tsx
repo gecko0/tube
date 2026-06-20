@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { RedirectToSignIn, useAuth } from "@clerk/react"
 import {
   useMutation,
@@ -7,7 +7,7 @@ import {
   usePaginatedQuery,
 } from "convex/react"
 import { api } from "../convex/_generated/api"
-import { Archive, ArchiveRestore, Ellipsis, Trash2 } from "lucide-react"
+import { Archive, ArchiveRestore, Ellipsis, Eye, EyeOff, Trash2 } from "lucide-react"
 import { AppSidebar } from "@/components/app-sidebar"
 import { ThemeProvider } from "@/components/theme-provider"
 import { VideoDetail } from "@/components/video-detail"
@@ -62,6 +62,9 @@ function AuthenticatedApp() {
   const archiveVideo = useMutation(api.videos.archive)
   const unarchiveVideo = useMutation(api.videos.unarchive)
   const removeVideo = useMutation(api.videos.remove)
+  const markRead = useMutation(api.videos.markRead)
+  const markUnread = useMutation(api.videos.markUnread)
+  const suppressedAutoReadVideoId = useRef<string | null>(null)
   const [alertOpen, setAlertOpen] = useState(false)
 
   const loading = videosStatus === "LoadingFirstPage"
@@ -70,6 +73,7 @@ function AuthenticatedApp() {
   const sortedVideos = useMemo(() => videos ? [...videos] : [], [videos])
 
   const selectVideo = useCallback((videoId: string) => {
+    suppressedAutoReadVideoId.current = null
     setSelectedVideoId(videoId)
     window.history.pushState(null, "", `/video/${videoId}`)
   }, [])
@@ -79,6 +83,7 @@ function AuthenticatedApp() {
   }, [loadMoreVideos])
 
   const clearSelection = useCallback(() => {
+    suppressedAutoReadVideoId.current = null
     setSelectedVideoId(null)
     window.history.pushState(null, "", "/")
   }, [])
@@ -114,11 +119,30 @@ function AuthenticatedApp() {
     selectNextVisibleVideo(selectedVideoId)
   }, [archiveVideo, detail, selectedVideoId, selectNextVisibleVideo, unarchiveVideo])
 
+  const handleReadToggle = useCallback(async () => {
+    if (!selectedVideoId || !detail) return
+
+    if (detail.readAt === undefined) {
+      suppressedAutoReadVideoId.current = null
+      await markRead({ videoId: selectedVideoId })
+    } else {
+      suppressedAutoReadVideoId.current = selectedVideoId
+      await markUnread({ videoId: selectedVideoId })
+    }
+  }, [detail, markRead, markUnread, selectedVideoId])
+
   const handleDelete = useCallback(async () => {
     if (!selectedVideoId) return
     await removeVideo({ videoId: selectedVideoId })
     selectNextVisibleVideo(selectedVideoId)
   }, [selectedVideoId, removeVideo, selectNextVisibleVideo])
+
+  useEffect(() => {
+    if (!selectedVideoId || !detail || detail.readAt !== undefined) return
+    if (suppressedAutoReadVideoId.current === selectedVideoId) return
+
+    void markRead({ videoId: selectedVideoId })
+  }, [detail, markRead, selectedVideoId])
 
   // After videos update, if selected video is gone, pick next one
   useEffect(() => {
@@ -137,6 +161,7 @@ function AuthenticatedApp() {
   // Handle browser back/forward
   useEffect(() => {
     const onPopState = () => {
+      suppressedAutoReadVideoId.current = null
       setSelectedVideoId(getVideoIdFromPath())
     }
     window.addEventListener("popstate", onPopState)
@@ -178,6 +203,20 @@ function AuthenticatedApp() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={handleReadToggle}>
+                  {detail.readAt === undefined ? (
+                    <>
+                      <Eye />
+                      Mark as read
+                    </>
+                  ) : (
+                    <>
+                      <EyeOff />
+                      Mark as unread
+                    </>
+                  )}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={handleArchiveToggle}>
                   {detail.archivedAt === undefined ? (
                     <>

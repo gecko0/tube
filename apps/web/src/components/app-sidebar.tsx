@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react"
 import { Filter } from "lucide-react"
-import { formatDate } from "@/lib/utils"
+import { cn, formatDate } from "@/lib/utils"
 import { NavUser } from "@/components/nav-user"
 import { Button } from "@/components/ui/button"
 import {
@@ -134,10 +134,26 @@ export function AppSidebar({
                           alt=""
                           className="w-20 min-w-20 rounded-sm object-cover aspect-video"
                         />
-                        <div className="flex flex-col gap-1 min-w-0">
-                          <span className="text-sm font-medium leading-tight truncate">
-                            {video.title}
-                          </span>
+                        <div className="flex flex-col gap-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {video.readAt === undefined && (
+                              <>
+                                <span
+                                  className="size-2 shrink-0 rounded-full bg-primary"
+                                  aria-hidden="true"
+                                />
+                                <span className="sr-only">Unread</span>
+                              </>
+                            )}
+                            <span
+                              className={cn(
+                                "text-sm leading-tight truncate",
+                                video.readAt === undefined ? "font-semibold" : "font-medium"
+                              )}
+                            >
+                              {video.title}
+                            </span>
+                          </div>
                           <span className="text-xs text-muted-foreground">
                             {formatDate(video.date)}
                           </span>

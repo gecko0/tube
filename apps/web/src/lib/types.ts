@@ -25,6 +25,7 @@ export interface VideoSummary {
   thumbnailUrl: string
   metadata: VideoMetadata | null
   archivedAt?: number
+  readAt?: number
 }
 
 export interface VideoDetail {
@@ -38,6 +39,7 @@ export interface VideoDetail {
   thumbnailUrl: string
   metadata: VideoMetadata | null
   archivedAt?: number
+  readAt?: number
 }
 
 export interface ApiKey {

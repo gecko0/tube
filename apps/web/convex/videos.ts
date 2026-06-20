@@ -51,6 +51,7 @@ export const listPage = query({
         thumbnailUrl: video.thumbnailUrl,
         metadata: serializeMetadata(video.metadata),
         archivedAt: video.archivedAt,
+        readAt: video.readAt,
       })),
     };
   },
@@ -70,6 +71,7 @@ export const get = query({
       thumbnailUrl: v.string(),
       metadata: v.union(videoMetadataValidator, v.null()),
       archivedAt: v.optional(v.number()),
+      readAt: v.optional(v.number()),
     }),
     v.null()
   ),
@@ -95,7 +97,48 @@ export const get = query({
       thumbnailUrl: video.thumbnailUrl,
       metadata: serializeMetadata(video.metadata),
       archivedAt: video.archivedAt,
+      readAt: video.readAt,
     };
+  },
+});
+
+export const markRead = mutation({
+  args: { videoId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+    const userId = identity.subject;
+    const video = await ctx.db
+      .query("videos")
+      .withIndex("by_userId_and_videoId", (q) =>
+        q.eq("userId", userId).eq("videoId", args.videoId)
+      )
+      .unique();
+    if (video) {
+      await ctx.db.patch(video._id, { readAt: Date.now() });
+    }
+    return null;
+  },
+});
+
+export const markUnread = mutation({
+  args: { videoId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+    const userId = identity.subject;
+    const video = await ctx.db
+      .query("videos")
+      .withIndex("by_userId_and_videoId", (q) =>
+        q.eq("userId", userId).eq("videoId", args.videoId)
+      )
+      .unique();
+    if (video) {
+      await ctx.db.patch(video._id, { readAt: undefined });
+    }
+    return null;
   },
 });
 

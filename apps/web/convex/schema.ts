@@ -14,6 +14,7 @@ export default defineSchema({
     thumbnailUrl: v.string(),
     metadata: v.optional(videoMetadataValidator),
     archivedAt: v.optional(v.number()),
+    readAt: v.optional(v.number()),
   })
     .index("by_userId", ["userId"])
     .index("by_userId_and_videoId", ["userId", "videoId"])

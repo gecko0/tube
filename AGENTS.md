@@ -50,7 +50,7 @@ apps/
 │   │   ├── auth.ts         # Internal helpers (resolve API key, upsert video)
 │   │   └── auth.config.ts  # Clerk JWT provider config
 │   └── src/
-└── web-local/              # Local web viewer source (builds to apps/cli/src/yt/web/dist/)
+└── web-local/              # Deprecated local web viewer source (builds to apps/cli/src/yt/web/dist/)
 docs/
 └── convex_rules.md
 ```
@@ -62,7 +62,7 @@ pip install -e "apps/cli[dev]"
 pnpm install
 ```
 
-The JavaScript apps are managed with pnpm workspaces from the repository root. Use `pnpm --filter web-local ...` for the local viewer source and `pnpm --filter web ...` for the cloud web app.
+The JavaScript apps are managed with pnpm workspaces from the repository root. Use `pnpm --filter web ...` for the cloud web app. `apps/web-local/` is deprecated; do not implement new features there unless the user explicitly asks for local viewer maintenance.
 
 ## Testing
 
@@ -104,7 +104,7 @@ When changing CLI commands, flags, output format, or user-facing behavior, updat
 - `summarize()` shells out to `claude -p <prompt>` and checks for the binary via `shutil.which` first.
 - `fetch_metadata` uses YouTube's oEmbed endpoint and falls back to `{"title": video_id, "author": "Unknown"}` on any error.
 - `yt web` starts a FastAPI/Uvicorn server serving both a JSON API and the pre-built React SPA from `apps/cli/src/yt/web/dist/`.
-- The local React frontend source lives in `apps/web-local/` and builds to `apps/cli/src/yt/web/dist/`. The built files are committed so users don't need Node.js at runtime.
+- The local React frontend source lives in `apps/web-local/` and builds to `apps/cli/src/yt/web/dist/`. This local viewer is deprecated; new product features should be implemented only in the cloud web app. The built files are committed so users don't need Node.js at runtime.
 - The cloud web app lives in `apps/web/` and uses Convex + Clerk for backend and auth.
 - `yt/cloud.py` manages cloud config (`~/.yt/config.json`) and uploads to Convex via HTTP endpoint.
 - `yt connect <key>` stores an API key for cloud sync. `yt disconnect` removes it.
