@@ -1,6 +1,10 @@
 import type { Id } from "../../convex/_generated/dataModel"
 
-export type VideoView = "active" | "archived"
+export type FolderScope =
+  | { kind: "all" }
+  | { kind: "inbox" }
+  | { kind: "archived" }
+  | { kind: "folder"; folderId: Id<"folders"> }
 
 export interface VideoMetadata {
   version?: number
@@ -19,6 +23,7 @@ export interface VideoSummary {
   _id: Id<"videos">
   _creationTime: number
   videoId: string
+  folderId?: Id<"folders">
   date: string
   title: string
   hasSummary: boolean
@@ -31,6 +36,7 @@ export interface VideoSummary {
 export interface VideoDetail {
   _id: Id<"videos">
   videoId: string
+  folderId?: Id<"folders">
   date: string
   title: string
   summaryMd: string | null
@@ -46,4 +52,12 @@ export interface ApiKey {
   _id: Id<"apiKeys">
   _creationTime: number
   name: string
+}
+
+export interface FolderSummary {
+  _id: Id<"folders">
+  _creationTime: number
+  name: string
+  parentFolderId?: Id<"folders">
+  videoCount: number
 }

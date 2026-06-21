@@ -10,6 +10,7 @@
 
 import type * as apiKeys from "../apiKeys.js";
 import type * as auth from "../auth.js";
+import type * as folders from "../folders.js";
 import type * as http from "../http.js";
 import type * as validators from "../validators.js";
 import type * as videos from "../videos.js";
@@ -23,6 +24,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   apiKeys: typeof apiKeys;
   auth: typeof auth;
+  folders: typeof folders;
   http: typeof http;
   validators: typeof validators;
   videos: typeof videos;

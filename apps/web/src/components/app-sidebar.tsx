@@ -1,13 +1,22 @@
-import { useEffect, useRef } from "react"
-import { Filter } from "lucide-react"
-import { cn, formatDate } from "@/lib/utils"
+import {
+  Archive,
+  Folder,
+  Inbox,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Trash2,
+  Video,
+} from "lucide-react"
+import { cn } from "@/lib/utils"
+import { Logo } from "@/components/logo"
 import { NavUser } from "@/components/nav-user"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -17,163 +26,224 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarMenu,
+  SidebarMenuAction,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
-import type { VideoSummary, VideoView } from "@/lib/types"
+import { useState, type DragEvent } from "react"
+import type { Id } from "../../convex/_generated/dataModel"
+import type { FolderScope, FolderSummary } from "@/lib/types"
+
+type VideoDropTarget = "inbox" | "archived" | Id<"folders">
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
-  videos: VideoSummary[]
-  view: VideoView
-  selectedVideoId: string | null
-  onSelectVideo: (videoId: string) => void
-  onViewChange: (view: VideoView) => void
-  loading: boolean
-  canLoadMore: boolean
-  loadingMore: boolean
-  onLoadMore: () => void
+  folders: FolderSummary[]
+  folderScope: FolderScope
+  dropTargetKey: string | null
+  onFolderScopeChange: (scope: FolderScope) => void
+  onCreateFolder: () => void
+  onRenameFolder: (folder: FolderSummary) => void
+  onDeleteFolder: (folder: FolderSummary) => void
+  onFolderDragOver: (event: DragEvent, target: VideoDropTarget) => void
+  onFolderDragLeave: () => void
+  onFolderDrop: (event: DragEvent, target: VideoDropTarget) => void
+}
+
+function scopeKey(scope: FolderScope) {
+  return scope.kind === "folder" ? scope.folderId : scope.kind
+}
+
+function FolderDropButton({
+  active,
+  dropActive,
+  icon,
+  label,
+  count,
+  onClick,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  action,
+  hideCount,
+}: {
+  active: boolean
+  dropActive: boolean
+  icon: React.ReactNode
+  label: string
+  count?: number
+  hideCount?: boolean
+  onClick: () => void
+  onDragOver: (event: DragEvent) => void
+  onDragLeave: () => void
+  onDrop: (event: DragEvent) => void
+  action?: React.ReactNode
+}) {
+  return (
+    <SidebarMenuItem
+      className={cn(
+        "group/folder rounded-md",
+        dropActive && "bg-primary/10 ring-1 ring-primary/40"
+      )}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      <SidebarMenuButton isActive={active} onClick={onClick}>
+        {icon}
+        <span className="truncate">{label}</span>
+      </SidebarMenuButton>
+      {count !== undefined && (
+        <SidebarMenuBadge
+          className={cn(
+            "group-focus-within/menu-item:opacity-0 group-hover/menu-item:opacity-0",
+            hideCount && "opacity-0"
+          )}
+        >
+          {count}
+        </SidebarMenuBadge>
+      )}
+      {action}
+    </SidebarMenuItem>
+  )
 }
 
 export function AppSidebar({
-  videos,
-  view,
-  selectedVideoId,
-  onSelectVideo,
-  onViewChange,
-  loading,
-  canLoadMore,
-  loadingMore,
-  onLoadMore,
+  folders,
+  folderScope,
+  dropTargetKey,
+  onFolderScopeChange,
+  onCreateFolder,
+  onRenameFolder,
+  onDeleteFolder,
+  onFolderDragOver,
+  onFolderDragLeave,
+  onFolderDrop,
   ...props
 }: AppSidebarProps) {
-  const sentinelRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    if (!canLoadMore || loadingMore) return
-    const sentinel = sentinelRef.current
-    if (!sentinel) return
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          onLoadMore()
-        }
-      },
-      { rootMargin: "200px" }
-    )
-
-    observer.observe(sentinel)
-    return () => observer.disconnect()
-  }, [canLoadMore, loadingMore, onLoadMore])
+  const currentScopeKey = scopeKey(folderScope)
+  const [openFolderActionId, setOpenFolderActionId] =
+    useState<Id<"folders"> | null>(null)
 
   return (
     <Sidebar variant="inset" {...props}>
       <SidebarContent>
         <SidebarGroup>
+          <div className="flex h-12 items-center px-2">
+            <Logo className="h-7" />
+          </div>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <FolderDropButton
+                active={currentScopeKey === "all"}
+                dropActive={false}
+                icon={<Video className="size-4" />}
+                label="All videos"
+                onClick={() => onFolderScopeChange({ kind: "all" })}
+                onDragOver={(event) => event.preventDefault()}
+                onDragLeave={onFolderDragLeave}
+                onDrop={(event) => event.preventDefault()}
+              />
+              <FolderDropButton
+                active={currentScopeKey === "inbox"}
+                dropActive={dropTargetKey === "inbox"}
+                icon={<Inbox className="size-4" />}
+                label="Inbox"
+                onClick={() => onFolderScopeChange({ kind: "inbox" })}
+                onDragOver={(event) => onFolderDragOver(event, "inbox")}
+                onDragLeave={onFolderDragLeave}
+                onDrop={(event) => onFolderDrop(event, "inbox")}
+              />
+              <FolderDropButton
+                active={currentScopeKey === "archived"}
+                dropActive={dropTargetKey === "archived"}
+                icon={<Archive className="size-4" />}
+                label="Archived"
+                onClick={() => onFolderScopeChange({ kind: "archived" })}
+                onDragOver={(event) => onFolderDragOver(event, "archived")}
+                onDragLeave={onFolderDragLeave}
+                onDrop={(event) => onFolderDrop(event, "archived")}
+              />
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
           <div className="flex items-center justify-between px-2 pb-2 pt-1">
             <span className="text-xs font-medium uppercase text-muted-foreground">
-              Videos
+              Library
             </span>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Filter videos"
-                  className={
-                    view === "archived"
-                      ? "size-8 bg-amber-100 text-amber-950 hover:bg-amber-200 dark:bg-amber-400/20 dark:text-amber-200 dark:hover:bg-amber-400/30"
-                      : "size-8"
-                  }
-                >
-                  <Filter className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuRadioGroup
-                  value={view}
-                  onValueChange={(value) => onViewChange(value as VideoView)}
-                >
-                  <DropdownMenuRadioItem value="active">
-                    Active
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="archived">
-                    Archived
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Create folder"
+              className="-mr-1 size-5"
+              onClick={onCreateFolder}
+            >
+              <Plus className="size-4" />
+            </Button>
           </div>
           <SidebarGroupContent>
             <SidebarMenu>
-              {loading ? (
-                <SidebarMenuItem>
-                  <SidebarMenuButton disabled>
-                    <span className="text-muted-foreground">Loading...</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ) : videos.length === 0 ? (
-                <SidebarMenuItem>
-                  <SidebarMenuButton disabled>
-                    <span className="text-muted-foreground">
-                      {view === "active" ? "No active videos" : "No archived videos"}
-                    </span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ) : (
-                videos.map((video) => (
-                  <SidebarMenuItem key={video.videoId}>
-                    <SidebarMenuButton
-                      isActive={selectedVideoId === video.videoId}
-                      onClick={() => onSelectVideo(video.videoId)}
-                      className="h-auto py-2"
+              {folders.map((folder) => (
+                <FolderDropButton
+                  key={folder._id}
+                  active={currentScopeKey === folder._id}
+                  dropActive={dropTargetKey === folder._id}
+                  icon={<Folder className="size-4" />}
+                  label={folder.name}
+                  count={folder.videoCount}
+                  hideCount={openFolderActionId === folder._id}
+                  onClick={() =>
+                    onFolderScopeChange({ kind: "folder", folderId: folder._id })
+                  }
+                  onDragOver={(event) => onFolderDragOver(event, folder._id)}
+                  onDragLeave={onFolderDragLeave}
+                  onDrop={(event) => onFolderDrop(event, folder._id)}
+                  action={
+                    <DropdownMenu
+                      open={openFolderActionId === folder._id}
+                      onOpenChange={(open) =>
+                        setOpenFolderActionId(open ? folder._id : null)
+                      }
                     >
-                      <div className="flex items-start gap-3 w-full">
-                        <img
-                          src={video.thumbnailUrl}
-                          alt=""
-                          className="w-20 min-w-20 rounded-sm object-cover aspect-video"
-                        />
-                        <div className="flex flex-col gap-1 min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            {video.readAt === undefined && (
-                              <>
-                                <span
-                                  className="size-2 shrink-0 rounded-full bg-primary"
-                                  aria-hidden="true"
-                                />
-                                <span className="sr-only">Unread</span>
-                              </>
-                            )}
-                            <span
-                              className={cn(
-                                "text-sm leading-tight truncate",
-                                video.readAt === undefined ? "font-semibold" : "font-medium"
-                              )}
-                            >
-                              {video.title}
-                            </span>
-                          </div>
-                          <span className="text-xs text-muted-foreground">
-                            {formatDate(video.date)}
-                          </span>
-                        </div>
-                      </div>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))
-              )}
-              {!loading && loadingMore && (
+                      <DropdownMenuTrigger asChild>
+                        <SidebarMenuAction
+                          showOnHover
+                          aria-label={`Folder actions for ${folder.name}`}
+                        >
+                          <MoreHorizontal className="size-4" />
+                        </SidebarMenuAction>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={() => onRenameFolder(folder)}>
+                          <Pencil />
+                          Rename
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onSelect={() => onDeleteFolder(folder)}
+                        >
+                          <Trash2 />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  }
+                />
+              ))}
+              {folders.length === 0 && (
                 <SidebarMenuItem>
                   <SidebarMenuButton disabled>
-                    <span className="text-muted-foreground">Loading...</span>
+                    <span className="text-muted-foreground">No folders</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}
             </SidebarMenu>
-            {!loading && canLoadMore && (
-              <div ref={sentinelRef} className="h-1" aria-hidden="true" />
-            )}
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>

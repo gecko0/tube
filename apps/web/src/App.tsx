@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react"
 import { RedirectToSignIn, useAuth } from "@clerk/react"
 import {
   useMutation,
@@ -9,8 +18,10 @@ import {
 import { api } from "../convex/_generated/api"
 import { Archive, ArchiveRestore, Ellipsis, Eye, EyeOff, Trash2 } from "lucide-react"
 import { AppSidebar } from "@/components/app-sidebar"
+import { FolderFormDialog } from "@/components/folder-form-dialog"
 import { ThemeProvider } from "@/components/theme-provider"
 import { VideoDetail } from "@/components/video-detail"
+import { VideoGrid } from "@/components/video-grid"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -36,41 +47,99 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import type { VideoView } from "@/lib/types"
+import { useDialog, useDialogWithData } from "@/hooks/use-dialog"
+import type { Id } from "../convex/_generated/dataModel"
+import type { FolderScope, FolderSummary, VideoSummary } from "@/lib/types"
+
+const VIDEO_DRAG_TYPE = "application/x-tube-video-ids"
+type VideoDropTarget = "inbox" | "archived" | Id<"folders">
 
 function getVideoIdFromPath() {
   const match = window.location.pathname.match(/^\/video\/([a-zA-Z0-9_-]+)/)
   return match ? match[1] : null
 }
 
+function getFolderViewTitle(scope: FolderScope, folders: FolderSummary[]) {
+  if (scope.kind === "all") return "All videos"
+  if (scope.kind === "inbox") return "Inbox"
+  if (scope.kind === "archived") return "Archived"
+  return folders.find((folder) => folder._id === scope.folderId)?.name ?? "Folder"
+}
+
+function getFolderEmptyLabel(scope: FolderScope) {
+  if (scope.kind === "all") return "No videos"
+  if (scope.kind === "inbox") return "No videos in Inbox"
+  if (scope.kind === "archived") return "No archived videos"
+  return "No videos in this folder"
+}
+
+function buildRangeIds(anchorId: string, targetId: string, videos: VideoSummary[]) {
+  const anchorIndex = videos.findIndex((video) => video.videoId === anchorId)
+  const targetIndex = videos.findIndex((video) => video.videoId === targetId)
+  if (anchorIndex === -1 || targetIndex === -1) return [targetId]
+
+  const start = Math.min(anchorIndex, targetIndex)
+  const end = Math.max(anchorIndex, targetIndex)
+  return videos.slice(start, end + 1).map((video) => video.videoId)
+}
+
 function AuthenticatedApp() {
-  const [videoView, setVideoView] = useState<VideoView>("active")
+  const [folderScope, setFolderScope] = useState<FolderScope>({ kind: "all" })
+  const [selectedVideoId, setSelectedVideoId] = useState<string | null>(getVideoIdFromPath)
+  const [selectedVideoIds, setSelectedVideoIds] = useState<Set<string>>(new Set())
+  const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null)
+  const [draggingVideoIds, setDraggingVideoIds] = useState<string[]>([])
+  const [dropTargetKey, setDropTargetKey] = useState<string | null>(null)
+  const suppressedAutoReadVideoId = useRef<string | null>(null)
+  const videoDeleteDialog = useDialog()
+  const folderFormDialog = useDialogWithData<FolderSummary>()
+  const folderDeleteDialog = useDialogWithData<FolderSummary>()
+
+  const foldersQuery = useQuery(api.folders.list)
+  const folders = useMemo(() => foldersQuery ?? [], [foldersQuery])
+
   const {
     results: videos,
     status: videosStatus,
     loadMore: loadMoreVideos,
   } = usePaginatedQuery(
     api.videos.listPage,
-    { view: videoView },
+    { folderScope },
     { initialNumItems: 100 }
   )
-  const [selectedVideoId, setSelectedVideoId] = useState<string | null>(getVideoIdFromPath)
   const detail = useQuery(
     api.videos.get,
     selectedVideoId ? { videoId: selectedVideoId } : "skip"
   )
+
+  const createFolder = useMutation(api.folders.create)
+  const renameFolder = useMutation(api.folders.rename)
+  const removeFolder = useMutation(api.folders.remove)
+  const moveToFolder = useMutation(api.videos.moveToFolder)
   const archiveVideo = useMutation(api.videos.archive)
+  const archiveManyVideos = useMutation(api.videos.archiveMany)
   const unarchiveVideo = useMutation(api.videos.unarchive)
   const removeVideo = useMutation(api.videos.remove)
   const markRead = useMutation(api.videos.markRead)
   const markUnread = useMutation(api.videos.markUnread)
-  const suppressedAutoReadVideoId = useRef<string | null>(null)
-  const [alertOpen, setAlertOpen] = useState(false)
 
   const loading = videosStatus === "LoadingFirstPage"
   const canLoadMoreVideos = videosStatus === "CanLoadMore"
   const loadingMoreVideos = videosStatus === "LoadingMore"
   const sortedVideos = useMemo(() => videos ? [...videos] : [], [videos])
+  const folderViewTitle = getFolderViewTitle(folderScope, folders)
+  const folderDeleteTarget = folderDeleteDialog.data
+  const selectionActive = selectedVideoIds.size > 0
+
+  const loadMoreNextVideos = useCallback(() => {
+    loadMoreVideos(100)
+  }, [loadMoreVideos])
+
+  const clearOpenVideo = useCallback(() => {
+    suppressedAutoReadVideoId.current = null
+    setSelectedVideoId(null)
+    window.history.pushState(null, "", "/")
+  }, [])
 
   const selectVideo = useCallback((videoId: string) => {
     suppressedAutoReadVideoId.current = null
@@ -78,15 +147,49 @@ function AuthenticatedApp() {
     window.history.pushState(null, "", `/video/${videoId}`)
   }, [])
 
-  const loadMoreNextVideos = useCallback(() => {
-    loadMoreVideos(100)
-  }, [loadMoreVideos])
+  const handleVideoSelect = useCallback((event: MouseEvent, videoId: string) => {
+    event.preventDefault()
+    clearOpenVideo()
 
-  const clearSelection = useCallback(() => {
-    suppressedAutoReadVideoId.current = null
-    setSelectedVideoId(null)
-    window.history.pushState(null, "", "/")
+    if (event.shiftKey && selectionAnchorId) {
+      const rangeIds = buildRangeIds(selectionAnchorId, videoId, sortedVideos)
+      setSelectedVideoIds(new Set(rangeIds))
+      return
+    }
+
+    setSelectedVideoIds((current) => {
+      const next = new Set(current)
+      if (next.has(videoId)) {
+        next.delete(videoId)
+      } else {
+        next.add(videoId)
+      }
+      setSelectionAnchorId(videoId)
+      if (next.size === 0) {
+        setSelectionAnchorId(null)
+      }
+      return next
+    })
+  }, [clearOpenVideo, selectionAnchorId, sortedVideos])
+
+  const clearMultiSelection = useCallback(() => {
+    setSelectedVideoIds(new Set())
+    setSelectionAnchorId(null)
   }, [])
+
+  const handleFolderScopeChange = useCallback((scope: FolderScope) => {
+    setFolderScope(scope)
+    clearMultiSelection()
+    clearOpenVideo()
+  }, [clearMultiSelection, clearOpenVideo])
+
+  const handleMoveSelectionToInbox = useCallback(async () => {
+    const videoIds = Array.from(selectedVideoIds)
+    if (videoIds.length === 0) return
+
+    await moveToFolder({ videoIds, folderId: null })
+    clearMultiSelection()
+  }, [clearMultiSelection, moveToFolder, selectedVideoIds])
 
   const selectNextVisibleVideo = useCallback((videoId: string) => {
     const currentIndex = sortedVideos.findIndex((video) => video.videoId === videoId)
@@ -98,15 +201,9 @@ function AuthenticatedApp() {
     if (fallback && fallback.videoId !== videoId) {
       selectVideo(fallback.videoId)
     } else {
-      clearSelection()
+      clearOpenVideo()
     }
-  }, [clearSelection, selectVideo, sortedVideos])
-
-  const handleViewChange = useCallback((view: VideoView) => {
-    if (view === videoView) return
-    setVideoView(view)
-    clearSelection()
-  }, [clearSelection, videoView])
+  }, [clearOpenVideo, selectVideo, sortedVideos])
 
   const handleArchiveToggle = useCallback(async () => {
     if (!selectedVideoId || !detail) return
@@ -131,11 +228,125 @@ function AuthenticatedApp() {
     }
   }, [detail, markRead, markUnread, selectedVideoId])
 
-  const handleDelete = useCallback(async () => {
+  const handleDeleteVideo = useCallback(async () => {
     if (!selectedVideoId) return
     await removeVideo({ videoId: selectedVideoId })
+    setSelectedVideoIds((current) => {
+      const next = new Set(current)
+      next.delete(selectedVideoId)
+      return next
+    })
     selectNextVisibleVideo(selectedVideoId)
   }, [selectedVideoId, removeVideo, selectNextVisibleVideo])
+
+  const handleSubmitFolderForm = useCallback(async ({ name }: { name: string }) => {
+    const folder = folderFormDialog.data
+    if (folder) {
+      await renameFolder({ folderId: folder._id, name })
+      return
+    }
+
+    const folderId = await createFolder({ name })
+    setFolderScope({ kind: "folder", folderId })
+    clearMultiSelection()
+    clearOpenVideo()
+  }, [
+    clearMultiSelection,
+    clearOpenVideo,
+    createFolder,
+    folderFormDialog.data,
+    renameFolder,
+  ])
+
+  const handleDeleteFolder = useCallback((folder: FolderSummary) => {
+    folderDeleteDialog.open(folder)
+  }, [folderDeleteDialog])
+
+  const handleConfirmDeleteFolder = useCallback(async () => {
+    const folderDeleteTarget = folderDeleteDialog.data
+    if (!folderDeleteTarget) return
+    await removeFolder({
+      folderId: folderDeleteTarget._id,
+      archiveContainedVideos: true,
+    })
+
+    if (folderScope.kind === "folder" && folderScope.folderId === folderDeleteTarget._id) {
+      setFolderScope({ kind: "inbox" })
+      clearOpenVideo()
+    }
+    if (detail?.folderId === folderDeleteTarget._id) {
+      clearOpenVideo()
+    }
+    clearMultiSelection()
+    folderDeleteDialog.close()
+  }, [
+    clearMultiSelection,
+    clearOpenVideo,
+    detail,
+    folderDeleteDialog,
+    folderScope,
+    removeFolder,
+  ])
+
+  const getDragVideoIds = useCallback((videoId: string) => {
+    if (selectedVideoIds.has(videoId) && selectedVideoIds.size > 1) {
+      return Array.from(selectedVideoIds)
+    }
+    return [videoId]
+  }, [selectedVideoIds])
+
+  const handleVideoDragStart = useCallback((event: DragEvent, videoId: string) => {
+    const videoIds = getDragVideoIds(videoId)
+    setDraggingVideoIds(videoIds)
+    event.dataTransfer.effectAllowed = "move"
+    event.dataTransfer.setData(VIDEO_DRAG_TYPE, JSON.stringify(videoIds))
+    event.dataTransfer.setData("text/plain", videoIds.join(", "))
+  }, [getDragVideoIds])
+
+  const handleVideoDragEnd = useCallback(() => {
+    setDraggingVideoIds([])
+    setDropTargetKey(null)
+  }, [])
+
+  const handleFolderDragOver = useCallback((
+    event: DragEvent,
+    target: VideoDropTarget
+  ) => {
+    event.preventDefault()
+    event.dataTransfer.dropEffect = "move"
+    setDropTargetKey(target)
+  }, [])
+
+  const handleFolderDragLeave = useCallback(() => {
+    setDropTargetKey(null)
+  }, [])
+
+  const handleFolderDrop = useCallback(async (
+    event: DragEvent,
+    target: VideoDropTarget
+  ) => {
+    event.preventDefault()
+    const rawPayload = event.dataTransfer.getData(VIDEO_DRAG_TYPE)
+    const videoIds = rawPayload
+      ? JSON.parse(rawPayload) as string[]
+      : draggingVideoIds
+
+    if (videoIds.length > 0) {
+      if (target === "archived") {
+        await archiveManyVideos({ videoIds })
+      } else {
+        await moveToFolder({
+          videoIds,
+          folderId: target === "inbox" ? null : target,
+        })
+      }
+      setSelectedVideoIds(new Set(videoIds))
+      setSelectionAnchorId(videoIds[0] ?? null)
+    }
+
+    setDraggingVideoIds([])
+    setDropTargetKey(null)
+  }, [archiveManyVideos, draggingVideoIds, moveToFolder])
 
   useEffect(() => {
     if (!selectedVideoId || !detail || detail.readAt !== undefined) return
@@ -144,7 +355,21 @@ function AuthenticatedApp() {
     void markRead({ videoId: selectedVideoId })
   }, [detail, markRead, selectedVideoId])
 
-  // After videos update, if selected video is gone, pick next one
+  useEffect(() => {
+    if (!selectionActive) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault()
+        clearMultiSelection()
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [clearMultiSelection, selectionActive])
+
+  // After videos update, if the selected video is gone, pick the next visible one.
   useEffect(() => {
     if (!selectedVideoId || loading || detail === undefined) return
     const stillExists = sortedVideos.some((v) => v.videoId === selectedVideoId)
@@ -158,7 +383,7 @@ function AuthenticatedApp() {
     }
   }, [sortedVideos, selectedVideoId, loading, detail, selectVideo])
 
-  // Handle browser back/forward
+  // Handle browser back/forward.
   useEffect(() => {
     const onPopState = () => {
       suppressedAutoReadVideoId.current = null
@@ -168,34 +393,28 @@ function AuthenticatedApp() {
     return () => window.removeEventListener("popstate", onPopState)
   }, [])
 
-  // Auto-select the latest video if no video in URL
-  useEffect(() => {
-    if (sortedVideos.length > 0 && selectedVideoId === null) {
-      selectVideo(sortedVideos[0].videoId)
-    }
-  }, [sortedVideos, selectedVideoId, selectVideo])
-
   return (
     <SidebarProvider>
       <AppSidebar
-        videos={sortedVideos}
-        view={videoView}
-        selectedVideoId={selectedVideoId}
-        onSelectVideo={selectVideo}
-        onViewChange={handleViewChange}
-        loading={loading}
-        canLoadMore={canLoadMoreVideos}
-        loadingMore={loadingMoreVideos}
-        onLoadMore={loadMoreNextVideos}
+        folders={folders}
+        folderScope={folderScope}
+        dropTargetKey={dropTargetKey}
+        onFolderScopeChange={handleFolderScopeChange}
+        onCreateFolder={() => folderFormDialog.open()}
+        onRenameFolder={(folder) => folderFormDialog.open(folder)}
+        onDeleteFolder={handleDeleteFolder}
+        onFolderDragOver={handleFolderDragOver}
+        onFolderDragLeave={handleFolderDragLeave}
+        onFolderDrop={handleFolderDrop}
       />
       <SidebarInset>
         <header className="flex h-12 shrink-0 items-center gap-2 overflow-hidden border-b px-4">
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="mr-2 !h-4" />
           <span className="min-w-0 flex-1 truncate text-sm font-medium">
-            {detail ? detail.title : "yt — YouTube Transcripts"}
+            {detail ? detail.title : folderViewTitle}
           </span>
-          {detail && (
+          {!selectionActive && detail && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="shrink-0 -mr-1">
@@ -233,7 +452,7 @@ function AuthenticatedApp() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   variant="destructive"
-                  onSelect={() => setAlertOpen(true)}
+                  onSelect={videoDeleteDialog.open}
                 >
                   <Trash2 />
                   Delete
@@ -243,7 +462,7 @@ function AuthenticatedApp() {
           )}
         </header>
         {detail && (
-          <AlertDialog open={alertOpen} onOpenChange={setAlertOpen}>
+          <AlertDialog {...videoDeleteDialog.props}>
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete this video?</AlertDialogTitle>
@@ -254,26 +473,78 @@ function AuthenticatedApp() {
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction variant="destructive" onClick={handleDelete}>
+                <AlertDialogAction variant="destructive" onClick={handleDeleteVideo}>
                   Delete
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
         )}
+        <AlertDialog
+          {...folderDeleteDialog.props}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete this folder?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {(folderDeleteTarget?.videoCount ?? 0) === 0
+                  ? "This will delete the folder."
+                  : (
+                    <>
+                      This folder contains {folderDeleteTarget?.videoCount ?? 0}{" "}
+                      {(folderDeleteTarget?.videoCount ?? 0) === 1
+                        ? "video"
+                        : "videos"}
+                      . Contained active videos will be archived, already archived
+                      videos will stay archived, and folder info will be removed.
+                    </>
+                  )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                onClick={handleConfirmDeleteFolder}
+              >
+                {(folderDeleteTarget?.videoCount ?? 0) === 0
+                  ? "Delete folder"
+                  : "Archive videos and delete folder"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        <FolderFormDialog
+          {...folderFormDialog.props}
+          folder={folderFormDialog.data}
+          onSubmit={handleSubmitFolderForm}
+        />
         <main className="flex-1 overflow-auto">
           {detail === undefined && selectedVideoId ? (
-            <div className="flex items-center justify-center h-64">
+            <div className="flex h-64 items-center justify-center">
               <span className="text-muted-foreground">Loading...</span>
             </div>
           ) : detail ? (
             <VideoDetail detail={detail} />
           ) : (
-            <div className="flex items-center justify-center h-64">
-              <span className="text-muted-foreground">
-                Select a video from the sidebar
-              </span>
-            </div>
+            <VideoGrid
+              title={folderViewTitle}
+              videos={sortedVideos}
+              loading={loading}
+              emptyLabel={getFolderEmptyLabel(folderScope)}
+              selectedVideoIds={selectedVideoIds}
+              draggingVideoIds={draggingVideoIds}
+              canLoadMore={canLoadMoreVideos}
+              loadingMore={loadingMoreVideos}
+              canMoveSelectionToInbox={folderScope.kind !== "inbox"}
+              onLoadMore={loadMoreNextVideos}
+              onMoveSelectionToInbox={handleMoveSelectionToInbox}
+              onCancelSelection={clearMultiSelection}
+              onVideoOpen={selectVideo}
+              onVideoSelect={handleVideoSelect}
+              onVideoDragStart={handleVideoDragStart}
+              onVideoDragEnd={handleVideoDragEnd}
+            />
           )}
         </main>
       </SidebarInset>

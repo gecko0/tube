@@ -6,6 +6,7 @@ export default defineSchema({
   videos: defineTable({
     userId: v.string(),
     videoId: v.string(),
+    folderId: v.optional(v.id("folders")),
     date: v.string(),
     title: v.string(),
     transcriptMd: v.string(),
@@ -18,7 +19,21 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_userId_and_videoId", ["userId", "videoId"])
-    .index("by_userId_and_archivedAt", ["userId", "archivedAt"]),
+    .index("by_userId_and_archivedAt", ["userId", "archivedAt"])
+    .index("by_userId_and_folderId", ["userId", "folderId"])
+    .index("by_userId_and_folderId_and_archivedAt", [
+      "userId",
+      "folderId",
+      "archivedAt",
+    ]),
+
+  folders: defineTable({
+    userId: v.string(),
+    name: v.string(),
+    parentFolderId: v.optional(v.id("folders")),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_userId_and_parentFolderId", ["userId", "parentFolderId"]),
 
   apiKeys: defineTable({
     userId: v.string(),
