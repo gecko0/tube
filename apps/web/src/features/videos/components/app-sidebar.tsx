@@ -32,10 +32,9 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 import { useState, type DragEvent } from "react"
-import type { Id } from "../../convex/_generated/dataModel"
+import type { Id } from "../../../../convex/_generated/dataModel"
+import type { VideoDropTarget } from "@/features/videos/types"
 import type { FolderScope, FolderSummary } from "@/lib/types"
-
-type VideoDropTarget = "inbox" | "archived" | Id<"folders">
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   folders: FolderSummary[]
