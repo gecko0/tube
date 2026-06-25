@@ -7,11 +7,15 @@ from yt.summarizer import (
     SummaryMetadata,
     build_brief_summary_prompt,
     build_summary_md,
+    build_tags_prompt,
+    parse_tags_response,
     save_brief_summary,
     save_summary,
+    save_tags,
     strip_summary_header,
     summarize,
     summarize_brief,
+    summarize_tags,
 )
 
 
@@ -107,6 +111,49 @@ class TestBuildBriefSummaryPrompt:
             "URL=https://youtube.com/watch?v=vid12345678\n"
             "Transcript=transcript"
         )
+
+
+# ---------------------------------------------------------------------------
+# tags
+# ---------------------------------------------------------------------------
+class TestTags:
+    def test_build_tags_prompt_contains_summary_context(self):
+        result = build_tags_prompt("Video Title", "Brief text", "Detailed text")
+
+        assert "Video Title" in result
+        assert "Brief text" in result
+        assert "Detailed text" in result
+        assert '{"tags"' in result
+
+    def test_parse_tags_response_normalizes_and_dedupes(self):
+        result = parse_tags_response(
+            '{"tags":[" Python ", "#AI", "python", "Machine   Learning"]}'
+        )
+
+        assert result == ["python", "ai", "machine learning"]
+
+    def test_parse_tags_response_accepts_json_code_fence(self):
+        result = parse_tags_response('```json\n{"tags":["Python"]}\n```')
+
+        assert result == ["python"]
+
+    def test_parse_tags_response_rejects_invalid_json(self):
+        with pytest.raises(ValueError, match="valid JSON"):
+            parse_tags_response("tags: python")
+
+    def test_parse_tags_response_rejects_wrong_shape(self):
+        with pytest.raises(ValueError, match="tags"):
+            parse_tags_response('{"labels":["python"]}')
+
+    @patch("yt.summarizer.subprocess.run")
+    @patch("yt.summarizer.shutil.which", return_value="/usr/bin/claude")
+    def test_summarize_tags_returns_parsed_tags(self, mock_which, mock_run):
+        mock_run.return_value = MagicMock(stdout='{"tags":["Python","AI"]}')
+
+        with patch("yt.summarizer.load_config", return_value={}):
+            result = summarize_tags("Title", "Brief", "Detailed")
+
+        assert result == ["python", "ai"]
 
 
 # ---------------------------------------------------------------------------
@@ -385,3 +432,15 @@ class TestSaveBriefSummary:
         assert '"aiEngine": "claude"' in metadata
         assert '"model": "sonnet"' in metadata
         assert '"briefSummaryGeneratedAt": "2025-06-15T10:30:45-04:00"' in metadata
+
+
+class TestSaveTags:
+    def test_writes_tags_json(self, tmp_path):
+        folder = tmp_path / "transcript_folder"
+        folder.mkdir()
+
+        save_tags(folder, ["python", "ai"])
+
+        assert (folder / "tags.json").read_text(encoding="utf-8") == (
+            '{\n  "tags": [\n    "python",\n    "ai"\n  ]\n}\n'
+        )

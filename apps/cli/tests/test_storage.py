@@ -7,6 +7,7 @@ from yt.storage import (
     parse_folder_name,
     read_brief_summary,
     read_summary,
+    read_tags,
     read_transcript,
 )
 
@@ -218,3 +219,27 @@ class TestReadBriefSummary:
         folder = tmp_path / "empty_folder"
         folder.mkdir()
         assert read_brief_summary(folder) is None
+
+
+# ---------------------------------------------------------------------------
+# read_tags
+# ---------------------------------------------------------------------------
+class TestReadTags:
+    def test_file_exists(self, tmp_path):
+        folder = tmp_path / "some_folder"
+        folder.mkdir()
+        (folder / "tags.json").write_text('{"tags":["python","ai"]}', encoding="utf-8")
+
+        assert read_tags(folder) == ["python", "ai"]
+
+    def test_file_missing(self, tmp_path):
+        folder = tmp_path / "empty_folder"
+        folder.mkdir()
+        assert read_tags(folder) is None
+
+    def test_invalid_file(self, tmp_path):
+        folder = tmp_path / "some_folder"
+        folder.mkdir()
+        (folder / "tags.json").write_text('{"tags":[123]}', encoding="utf-8")
+
+        assert read_tags(folder) is None

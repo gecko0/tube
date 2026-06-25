@@ -23,6 +23,7 @@ import type { FolderScope, FolderSummary } from "@/lib/types"
 
 export function VideosPage() {
   const [folderScope, setFolderScope] = useState<FolderScope>({ kind: "all" })
+  const [tagFilter, setTagFilter] = useState("")
   const videoDeleteDialog = useDialog()
   const folderFormDialog = useDialogWithData<FolderSummary>()
   const folderDeleteDialog = useDialogWithData<FolderSummary>()
@@ -49,6 +50,7 @@ export function VideosPage() {
   } = useVideosPageData({
     folderScope,
     selectedVideoId,
+    tagFilter,
   })
   const {
     archiveManyVideos,
@@ -60,6 +62,7 @@ export function VideosPage() {
     removeFolder,
     removeVideo,
     renameFolder,
+    setTags,
     unarchiveVideo,
   } = mutations
 
@@ -110,6 +113,12 @@ export function VideosPage() {
     clearOpenVideo()
   }, [clearMultiSelection, clearOpenVideo])
 
+  const handleTagFilterChange = useCallback((tag: string) => {
+    setTagFilter(tag)
+    clearMultiSelection()
+    clearOpenVideo()
+  }, [clearMultiSelection, clearOpenVideo])
+
   const handleMoveSelectionToInbox = useCallback(async () => {
     const videoIds = Array.from(selectedVideoIds)
     if (videoIds.length === 0) return
@@ -147,6 +156,11 @@ export function VideosPage() {
     removeSelectedVideoId(selectedVideoId)
     selectNextVisibleVideo(selectedVideoId, videos)
   }, [removeSelectedVideoId, removeVideo, selectedVideoId, selectNextVisibleVideo, videos])
+
+  const handleSubmitTags = useCallback(async (tags: string[]) => {
+    if (!selectedVideoId) return
+    await setTags({ videoId: selectedVideoId, tags })
+  }, [selectedVideoId, setTags])
 
   const handleSubmitFolderForm = useCallback(async ({ name }: { name: string }) => {
     const folder = folderFormDialog.data
@@ -239,7 +253,7 @@ export function VideosPage() {
               <span className="text-muted-foreground">Loading...</span>
             </div>
           ) : detail ? (
-            <VideoDetail detail={detail} />
+            <VideoDetail detail={detail} onTagsChange={handleSubmitTags} />
           ) : (
             <VideoGrid
               title={folderViewTitle}
@@ -251,9 +265,11 @@ export function VideosPage() {
               canLoadMore={canLoadMoreVideos}
               loadingMore={loadingMoreVideos}
               canMoveSelectionToInbox={folderScope.kind !== "inbox"}
+              tagFilter={tagFilter}
               onLoadMore={loadMoreNextVideos}
               onMoveSelectionToInbox={handleMoveSelectionToInbox}
               onCancelSelection={clearMultiSelection}
+              onTagFilterChange={handleTagFilterChange}
               onVideoOpen={selectVideo}
               onVideoSelect={handleVideoSelect}
               onVideoDragStart={handleVideoDragStart}

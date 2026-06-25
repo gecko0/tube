@@ -1,3 +1,4 @@
+import json
 import shutil
 import subprocess
 import sys
@@ -12,6 +13,7 @@ from .metadata import update_video_metadata
 AI_ENGINES = {"claude", "codex"}
 CLAUDE_MODEL_ALIASES = {"sonnet", "opus", "fable"}
 BRIEF_SUMMARY_PROMPT_KEY = "brief_summary_prompt"
+MAX_TAGS = 8
 DEFAULT_BRIEF_SUMMARY_PROMPT = """You are writing a brief orientation summary for a YouTube video.
 
 The goal is not to teach the material in depth and not to extract every useful lesson. The goal is to help a busy reader quickly understand what the video is about, what ground it covers, and whether it is worth reading the detailed summary.
@@ -221,6 +223,78 @@ def build_brief_summary_prompt(
     )
 
 
+def build_tags_prompt(title: str, brief_summary: str, detailed_summary: str) -> str:
+    return f"""You are tagging a YouTube video for a searchable personal library.
+
+Video title: {title}
+
+Return JSON only. Do not wrap it in markdown. Do not include commentary.
+
+Output schema:
+{{"tags":["tag one","tag two","tag three"]}}
+
+Rules:
+- Return 3-8 tags.
+- Tags must be short, user-facing topic labels.
+- Prefer concrete technologies, concepts, domains, people, or recurring themes.
+- Use lowercase words.
+- Do not include hashtags.
+- Do not include duplicates.
+
+Brief summary:
+<brief_summary>
+{brief_summary}
+</brief_summary>
+
+Detailed summary:
+<detailed_summary>
+{detailed_summary}
+</detailed_summary>"""
+
+
+def _strip_json_code_fence(text: str) -> str:
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+
+    lines = stripped.splitlines()
+    if len(lines) >= 3 and lines[-1].strip() == "```":
+        return "\n".join(lines[1:-1]).strip()
+    return stripped
+
+
+def normalize_tag(tag: str) -> str:
+    return " ".join(tag.strip().lower().lstrip("#").split())
+
+
+def parse_tags_response(response: str) -> list[str]:
+    """Parse and validate the model's JSON-only tag response."""
+    try:
+        data = json.loads(_strip_json_code_fence(response))
+    except json.JSONDecodeError as exc:
+        raise ValueError("Tag response was not valid JSON.") from exc
+
+    if not isinstance(data, dict) or not isinstance(data.get("tags"), list):
+        raise ValueError('Tag response must be a JSON object with a "tags" array.')
+
+    tags: list[str] = []
+    seen = set()
+    for raw_tag in data["tags"]:
+        if not isinstance(raw_tag, str):
+            raise ValueError("Tag response must contain only string tags.")
+        tag = normalize_tag(raw_tag)
+        if not tag or tag in seen:
+            continue
+        seen.add(tag)
+        tags.append(tag)
+        if len(tags) >= MAX_TAGS:
+            break
+
+    if not tags:
+        raise ValueError("Tag response did not contain any usable tags.")
+    return tags
+
+
 def run_claude(prompt: str, model: str) -> str:
     if not shutil.which("claude"):
         raise FileNotFoundError(
@@ -299,6 +373,20 @@ def summarize(
     metadata = metadata or resolve_summary_metadata(model=model, ai_engine=ai_engine)
     prompt = build_summary_prompt(transcript_text, title)
     return run_prompt(prompt, metadata)
+
+
+def summarize_tags(
+    title: str,
+    brief_summary: str,
+    detailed_summary: str,
+    model: str | None = None,
+    ai_engine: str | None = None,
+    metadata: SummaryMetadata | None = None,
+) -> list[str]:
+    """Call the selected AI engine and parse structured video tags."""
+    metadata = metadata or resolve_summary_metadata(model=model, ai_engine=ai_engine)
+    prompt = build_tags_prompt(title, brief_summary, detailed_summary)
+    return parse_tags_response(run_prompt(prompt, metadata))
 
 
 def build_summary_md(
@@ -391,4 +479,11 @@ def save_brief_summary(
             "model": model,
             "briefSummaryGeneratedAt": generated_at,
         },
+    )
+
+
+def save_tags(folder: Path, tags: list[str]) -> None:
+    (folder / "tags.json").write_text(
+        json.dumps({"tags": tags}, indent=2) + "\n",
+        encoding="utf-8",
     )

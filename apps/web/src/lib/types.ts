@@ -27,6 +27,7 @@ export interface VideoSummary {
   date: string
   title: string
   hasSummary: boolean
+  tags: string[]
   thumbnailUrl: string
   metadata: VideoMetadata | null
   archivedAt?: number
@@ -41,6 +42,7 @@ export interface VideoDetail {
   title: string
   summaryMd: string | null
   briefSummaryMd: string | null
+  tags: string[]
   transcriptMd: string
   thumbnailUrl: string
   metadata: VideoMetadata | null

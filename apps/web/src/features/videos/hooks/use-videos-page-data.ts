@@ -6,9 +6,11 @@ import type { FolderScope } from "@/lib/types"
 export function useVideosPageData({
   folderScope,
   selectedVideoId,
+  tagFilter,
 }: {
   folderScope: FolderScope
   selectedVideoId: string | null
+  tagFilter: string
 }) {
   const foldersQuery = useQuery(api.folders.list)
   const folders = useMemo(() => foldersQuery ?? [], [foldersQuery])
@@ -19,7 +21,7 @@ export function useVideosPageData({
     loadMore: loadMoreVideos,
   } = usePaginatedQuery(
     api.videos.listPage,
-    { folderScope },
+    { folderScope, tag: tagFilter || undefined },
     { initialNumItems: 100 }
   )
 
@@ -39,6 +41,7 @@ export function useVideosPageData({
   const removeVideo = useMutation(api.videos.remove)
   const markRead = useMutation(api.videos.markRead)
   const markUnread = useMutation(api.videos.markUnread)
+  const setTags = useMutation(api.videos.setTags)
   const mutations = useMemo(() => ({
     createFolder,
     renameFolder,
@@ -50,6 +53,7 @@ export function useVideosPageData({
     removeVideo,
     markRead,
     markUnread,
+    setTags,
   }), [
     archiveManyVideos,
     archiveVideo,
@@ -60,6 +64,7 @@ export function useVideosPageData({
     removeFolder,
     removeVideo,
     renameFolder,
+    setTags,
     unarchiveVideo,
   ])
 

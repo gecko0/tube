@@ -172,6 +172,7 @@ This will:
 3. Save `transcript.md` to disk
 4. Generate a brief orientation summary and save `brief_summary.md`
 5. Generate the detailed summary and save `summary.md`
+6. Generate searchable video tags and save `tags.json`
 
 If the video was already fetched, you'll be asked whether to skip or regenerate.
 
@@ -193,7 +194,7 @@ Model and AI engine options apply to every URL in the batch:
 yt --ai_engine codex --model latest https://youtu.be/video1 https://youtu.be/video2
 ```
 
-Each video folder also includes `metadata.json` with structured video and processing metadata such as URL, author, fetched timestamp, AI engine, model, brief summary timestamp, and detailed summary timestamp. Cloud sync uploads this JSON metadata directly so the server does not need to parse markdown.
+Each video folder also includes `metadata.json` with structured video and processing metadata such as URL, author, fetched timestamp, AI engine, model, brief summary timestamp, and detailed summary timestamp. Tags are stored separately in `tags.json`. Cloud sync uploads this structured metadata and tags directly so the server does not need to parse markdown.
 
 Claude is the default AI engine:
 
@@ -298,7 +299,7 @@ yt sync --all
 yt disconnect
 ```
 
-When connected, `yt <url>` saves locally as usual and also uploads to the Convex cloud backend. If the upload fails, the CLI warns but doesn't block.
+When connected, `yt <url>` saves locally as usual and also uploads the transcript, summaries, metadata, and tags to the Convex cloud backend. If the upload fails, the CLI warns but doesn't block. If tag generation returns invalid structured output, the CLI keeps the local transcript and summaries but skips cloud sync for that run to avoid sending partial tag data.
 
 Run `yt sync` after connecting a new API key to backfill recent local transcripts. By default it checks the latest 100 local videos. Use `yt sync --all` for a full backfill. The command asks Convex which local video IDs are missing and uploads only those videos.
 
@@ -331,10 +332,16 @@ All transcripts and summaries are saved under `~/.yt/transcripts/`, organized by
 ~/.yt/transcripts/
 ├── 2026-02-21 - dQw4w9WgXcQ - Never Gonna Give You Up/
 │   ├── transcript.md
-│   └── summary.md
+│   ├── brief_summary.md
+│   ├── summary.md
+│   ├── tags.json
+│   └── metadata.json
 └── 2026-02-20 - abc123xyz - How to Build a Rocket/
     ├── transcript.md
-    └── summary.md
+    ├── brief_summary.md
+    ├── summary.md
+    ├── tags.json
+    └── metadata.json
 ```
 
 Folder naming: `YYYY-MM-DD - <video-id> - <sanitized-title>`
@@ -406,7 +413,8 @@ tube/
 2. **Metadata** — Fetches title and author via YouTube's free [oEmbed API](https://oembed.com/) (no API key needed)
 3. **Transcript** — Downloads captions using [youtube-transcript-api](https://github.com/jdepoix/youtube-transcript-api)
 4. **Storage** — Saves a timestamped `transcript.md` to `~/.yt/transcripts/`
-5. **Summarization** — Pipes the transcript to `claude --model sonnet -p` by default and saves `summary.md`
+5. **Summarization** — Pipes the transcript to `claude --model sonnet -p` by default and saves `brief_summary.md` and `summary.md`
+6. **Tagging** — Asks the selected AI engine for JSON-only tags, validates them locally, and saves `tags.json`
 
 ## Contributing
 

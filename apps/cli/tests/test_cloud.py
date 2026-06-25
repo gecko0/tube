@@ -83,6 +83,7 @@ class TestUploadVideo:
                 "# Summary",
                 "# Brief",
                 {"author": "Author", "aiEngine": "codex", "model": "gpt-5.5"},
+                ["python", "ai"],
             )
 
         assert result is True
@@ -98,6 +99,7 @@ class TestUploadVideo:
             "aiEngine": "codex",
             "model": "gpt-5.5",
         }
+        assert payload["tags"] == ["python", "ai"]
 
     def test_upload_without_summary(self, config_path):
         save_config({"api_key": "my-key"})
@@ -111,6 +113,7 @@ class TestUploadVideo:
         payload = mock_post.call_args.kwargs["json"]
         assert "summaryMd" not in payload
         assert "briefSummaryMd" not in payload
+        assert "tags" not in payload
 
     def test_returns_false_on_server_error(self, config_path):
         save_config({"api_key": "my-key"})
@@ -377,6 +380,10 @@ class TestSync:
         (local_only / "transcript.md").write_text("# Local transcript", encoding="utf-8")
         (local_only / "summary.md").write_text("# Local summary", encoding="utf-8")
         (local_only / "brief_summary.md").write_text("# Brief summary", encoding="utf-8")
+        (local_only / "tags.json").write_text(
+            '{"tags":["python","ai"]}',
+            encoding="utf-8",
+        )
 
         already_synced = transcripts_dir / "2025-06-16 - synced00002 - Already Synced"
         already_synced.mkdir()
@@ -400,6 +407,7 @@ class TestSync:
             summary_md="# Local summary",
             brief_summary_md="# Brief summary",
             metadata=None,
+            tags=["python", "ai"],
         )
 
     def test_sync_defaults_to_latest_100(self, config_path, transcripts_dir):

@@ -1,6 +1,7 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { normalizeTags } from "./tagUtils";
 
 const http = httpRouter();
 
@@ -39,6 +40,16 @@ function normalizeVideoMetadata(value: unknown) {
   return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
 
+function parseUploadTags(value: unknown) {
+  if (value === undefined) {
+    return { ok: true as const, tags: undefined };
+  }
+  if (!Array.isArray(value) || !value.every((tag) => typeof tag === "string")) {
+    return { ok: false as const };
+  }
+  return { ok: true as const, tags: normalizeTags(value) };
+}
+
 async function getKeyHash(req: Request) {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -73,6 +84,10 @@ http.route({
     }
 
     const body = await req.json();
+    const parsedTags = parseUploadTags(body.tags);
+    if (!parsedTags.ok) {
+      return jsonResponse({ error: "Expected tags array" }, 400);
+    }
 
     await ctx.runMutation(internal.auth.upsertVideo, {
       userId,
@@ -82,6 +97,7 @@ http.route({
       transcriptMd: body.transcriptMd,
       summaryMd: body.summaryMd ?? undefined,
       briefSummaryMd: body.briefSummaryMd ?? undefined,
+      tags: parsedTags.tags,
       thumbnailUrl: body.thumbnailUrl,
       metadata: normalizeVideoMetadata(body.metadata),
     });

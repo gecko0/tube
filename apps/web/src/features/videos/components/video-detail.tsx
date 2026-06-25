@@ -4,10 +4,12 @@ import { code } from "@streamdown/code"
 import "streamdown/styles.css"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
+import { VideoTagEditor } from "@/features/videos/components/video-tag-editor"
 import type { VideoDetail as VideoDetailType } from "@/lib/types"
 
 interface VideoDetailProps {
   detail: VideoDetailType
+  onTagsChange: (tags: string[]) => Promise<void>
 }
 
 function stripSummaryHeader(markdown: string | null): string | null {
@@ -51,7 +53,7 @@ function stripSummaryHeader(markdown: string | null): string | null {
   return lines.join("\n").trim()
 }
 
-export function VideoDetail({ detail }: VideoDetailProps) {
+export function VideoDetail({ detail, onTagsChange }: VideoDetailProps) {
   const metadataItems = [
     formatDate(detail.date),
     detail.metadata?.author,
@@ -94,6 +96,7 @@ export function VideoDetail({ detail }: VideoDetailProps) {
         <p className="text-sm text-muted-foreground mt-1">
           {metadataItems.join(" | ")}
         </p>
+        <VideoTagEditor tags={detail.tags} onChange={onTagsChange} />
       </div>
 
       <Separator />

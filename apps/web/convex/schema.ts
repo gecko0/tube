@@ -12,6 +12,7 @@ export default defineSchema({
     transcriptMd: v.string(),
     summaryMd: v.optional(v.string()),
     briefSummaryMd: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
     thumbnailUrl: v.string(),
     metadata: v.optional(videoMetadataValidator),
     archivedAt: v.optional(v.number()),
@@ -25,6 +26,29 @@ export default defineSchema({
       "userId",
       "folderId",
       "archivedAt",
+    ]),
+
+  videoTags: defineTable({
+    userId: v.string(),
+    videoId: v.string(),
+    tag: v.string(),
+    folderId: v.optional(v.id("folders")),
+    archivedAt: v.optional(v.number()),
+    date: v.string(),
+  })
+    .index("by_userId_and_videoId", ["userId", "videoId"])
+    .index("by_userId_and_tag_and_archivedAt_and_date", [
+      "userId",
+      "tag",
+      "archivedAt",
+      "date",
+    ])
+    .index("by_userId_and_tag_and_folderId_and_archivedAt_and_date", [
+      "userId",
+      "tag",
+      "folderId",
+      "archivedAt",
+      "date",
     ]),
 
   folders: defineTable({

@@ -1,7 +1,8 @@
-import { Check, PlayCircle } from "lucide-react"
+import { Check, PlayCircle, Search, X } from "lucide-react"
 import type { DragEvent, MouseEvent } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { cn, formatDate } from "@/lib/utils"
 import type { VideoSummary } from "@/lib/types"
 
@@ -15,9 +16,11 @@ interface VideoGridProps {
   canLoadMore: boolean
   loadingMore: boolean
   canMoveSelectionToInbox: boolean
+  tagFilter: string
   onLoadMore: () => void
   onMoveSelectionToInbox: () => void
   onCancelSelection: () => void
+  onTagFilterChange: (tag: string) => void
   onVideoOpen: (videoId: string) => void
   onVideoSelect: (event: MouseEvent, videoId: string) => void
   onVideoDragStart: (event: DragEvent, videoId: string) => void
@@ -87,9 +90,11 @@ export function VideoGrid({
   canLoadMore,
   loadingMore,
   canMoveSelectionToInbox,
+  tagFilter,
   onLoadMore,
   onMoveSelectionToInbox,
   onCancelSelection,
+  onTagFilterChange,
   onVideoOpen,
   onVideoSelect,
   onVideoDragStart,
@@ -108,9 +113,30 @@ export function VideoGrid({
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 p-4 sm:p-6">
-      <div className="flex min-h-8 items-center justify-between gap-3">
+      <div className="flex min-h-8 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="truncate text-xl font-semibold">{title}</h1>
-        <div className="flex shrink-0 items-center gap-3">
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-3">
+          <div className="relative w-full sm:w-64">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={tagFilter}
+              onChange={(event) => onTagFilterChange(event.target.value)}
+              placeholder="Filter by tag"
+              className="h-9 pl-8 pr-9"
+            />
+            {tagFilter && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="absolute right-1 top-1/2 -translate-y-1/2"
+                onClick={() => onTagFilterChange("")}
+              >
+                <X className="size-4" />
+                <span className="sr-only">Clear tag filter</span>
+              </Button>
+            )}
+          </div>
           {selectionActive && (
             <>
               <span className="text-sm text-muted-foreground">

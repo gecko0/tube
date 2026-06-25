@@ -1,3 +1,4 @@
+import json
 import re
 import shutil
 from pathlib import Path
@@ -80,3 +81,17 @@ def read_brief_summary(folder: Path) -> str | None:
     if path.exists():
         return path.read_text(encoding="utf-8")
     return None
+
+
+def read_tags(folder: Path) -> list[str] | None:
+    path = folder / "tags.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    tags = data.get("tags") if isinstance(data, dict) else None
+    if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
+        return None
+    return tags

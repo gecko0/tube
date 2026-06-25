@@ -492,12 +492,16 @@ class TestAddVideoFlow:
             patch("yt.main.is_connected", return_value=False),
             patch("yt.main.summarize_brief", return_value="# Brief"),
             patch("yt.main.summarize", return_value="# Detailed"),
+            patch("yt.main.summarize_tags", return_value=["python", "ai"]),
         ):
             add_video(url)
 
         folder = transcripts_dir / "2025-06-15T103045 - dQw4w9WgXcQ - My Video"
         assert (folder / "brief_summary.md").read_text(encoding="utf-8") == "# Brief\n"
         assert "# Detailed" in (folder / "summary.md").read_text(encoding="utf-8")
+        assert json.loads((folder / "tags.json").read_text(encoding="utf-8")) == {
+            "tags": ["python", "ai"]
+        }
 
         metadata = json.loads((folder / "metadata.json").read_text(encoding="utf-8"))
         assert metadata["aiEngine"] == "claude"
@@ -522,6 +526,7 @@ class TestAddVideoFlow:
             patch("yt.main.is_connected", return_value=False),
             patch("yt.main.summarize_brief", return_value="# Brief") as mock_brief,
             patch("yt.main.summarize", return_value="# Detailed"),
+            patch("yt.main.summarize_tags", return_value=["python", "ai"]),
         ):
             add_video(url)
 
@@ -546,6 +551,7 @@ class TestAddVideoFlow:
             patch("yt.main.is_connected", return_value=True),
             patch("yt.main.summarize_brief", return_value="# Brief"),
             patch("yt.main.summarize", return_value="# Detailed"),
+            patch("yt.main.summarize_tags", return_value=["python", "ai"]),
             patch("yt.main.upload_video", return_value=True) as mock_upload,
         ):
             add_video(url)
@@ -555,3 +561,30 @@ class TestAddVideoFlow:
         assert mock_upload.call_args.kwargs["metadata"]["briefSummaryGeneratedAt"] == (
             "2025-06-15T10:30:45-04:00"
         )
+        assert mock_upload.call_args.kwargs["tags"] == ["python", "ai"]
+
+    def test_add_video_skips_upload_when_tags_are_invalid(
+        self,
+        transcripts_dir,
+        frozen_date,
+        sample_entries,
+    ):
+        url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+        with (
+            patch(
+                "yt.main.fetch_metadata",
+                return_value={"title": "My Video", "author": "Author"},
+            ),
+            patch("yt.main.fetch_transcript", return_value=sample_entries),
+            patch("yt.main.is_connected", return_value=True),
+            patch("yt.main.summarize_brief", return_value="# Brief"),
+            patch("yt.main.summarize", return_value="# Detailed"),
+            patch("yt.main.summarize_tags", side_effect=ValueError("bad tags")),
+            patch("yt.main.upload_video") as mock_upload,
+        ):
+            add_video(url)
+
+        folder = transcripts_dir / "2025-06-15T103045 - dQw4w9WgXcQ - My Video"
+        assert not (folder / "tags.json").exists()
+        mock_upload.assert_not_called()

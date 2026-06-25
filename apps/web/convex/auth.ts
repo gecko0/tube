@@ -1,6 +1,9 @@
 import { internalQuery, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { videoMetadataValidator } from "./validators";
+import { normalizeTags } from "./tagUtils";
+import type { MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 
 export const resolveApiKey = internalQuery({
   args: { keyHash: v.string() },
@@ -34,6 +37,39 @@ export const findMissingVideoIds = internalQuery({
   },
 });
 
+async function replaceVideoTagRows(
+  ctx: MutationCtx,
+  args: {
+    userId: string;
+    videoId: string;
+    tags: Array<string>;
+    folderId?: Id<"folders">;
+    archivedAt?: number;
+    date: string;
+  }
+) {
+  const existingRows = await ctx.db
+    .query("videoTags")
+    .withIndex("by_userId_and_videoId", (q) =>
+      q.eq("userId", args.userId).eq("videoId", args.videoId)
+    )
+    .collect();
+  for (const row of existingRows) {
+    await ctx.db.delete(row._id);
+  }
+
+  for (const tag of args.tags) {
+    await ctx.db.insert("videoTags", {
+      userId: args.userId,
+      videoId: args.videoId,
+      tag,
+      folderId: args.folderId,
+      archivedAt: args.archivedAt,
+      date: args.date,
+    });
+  }
+}
+
 export const upsertVideo = internalMutation({
   args: {
     userId: v.string(),
@@ -43,6 +79,7 @@ export const upsertVideo = internalMutation({
     transcriptMd: v.string(),
     summaryMd: v.optional(v.string()),
     briefSummaryMd: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
     thumbnailUrl: v.string(),
     metadata: v.optional(videoMetadataValidator),
   },
@@ -54,6 +91,7 @@ export const upsertVideo = internalMutation({
         q.eq("userId", args.userId).eq("videoId", args.videoId)
       )
       .unique();
+    const tags = args.tags === undefined ? undefined : normalizeTags(args.tags);
 
     if (existing) {
       await ctx.db.patch(existing._id, {
@@ -62,9 +100,20 @@ export const upsertVideo = internalMutation({
         transcriptMd: args.transcriptMd,
         summaryMd: args.summaryMd,
         briefSummaryMd: args.briefSummaryMd,
+        ...(tags !== undefined ? { tags } : {}),
         thumbnailUrl: args.thumbnailUrl,
         metadata: args.metadata,
       });
+      if (tags !== undefined) {
+        await replaceVideoTagRows(ctx, {
+          userId: args.userId,
+          videoId: args.videoId,
+          tags,
+          folderId: existing.folderId,
+          archivedAt: existing.archivedAt,
+          date: args.date,
+        });
+      }
     } else {
       await ctx.db.insert("videos", {
         userId: args.userId,
@@ -74,9 +123,18 @@ export const upsertVideo = internalMutation({
         transcriptMd: args.transcriptMd,
         summaryMd: args.summaryMd,
         briefSummaryMd: args.briefSummaryMd,
+        tags,
         thumbnailUrl: args.thumbnailUrl,
         metadata: args.metadata,
       });
+      if (tags !== undefined) {
+        await replaceVideoTagRows(ctx, {
+          userId: args.userId,
+          videoId: args.videoId,
+          tags,
+          date: args.date,
+        });
+      }
     }
     return null;
   },

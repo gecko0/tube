@@ -25,6 +25,7 @@ from .storage import (
     parse_folder_name,
     read_brief_summary,
     read_summary,
+    read_tags,
     read_transcript,
 )
 from .summarizer import (
@@ -32,8 +33,10 @@ from .summarizer import (
     resolve_summary_metadata,
     save_brief_summary,
     save_summary,
+    save_tags,
     summarize,
     summarize_brief,
+    summarize_tags,
 )
 from .transcript import (
     build_prompt_transcript,
@@ -417,8 +420,37 @@ def add_video(
     metadata = read_video_metadata(folder)
     console.print("[green]Summary saved.[/green]")
 
+    tags: list[str] | None = None
+    tags_valid = True
+    console.print(
+        f"[dim]Creating tags with {summary_metadata.ai_engine.title()}...[/dim]"
+    )
+    try:
+        tags = summarize_tags(
+            title,
+            brief_summary_md or brief_summary_text,
+            summary_md,
+            model=model,
+            ai_engine=ai_engine,
+            metadata=summary_metadata,
+        )
+    except ValueError as e:
+        tags_valid = False
+        console.print(f"[red]Tag generation failed:[/red] {e}")
+        console.print("[yellow]Skipping cloud sync to avoid partial tag data.[/yellow]")
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]Summarizer returned an error:[/red] {e.stderr or e}")
+        sys.exit(1)
+
+    if tags_valid and tags is not None:
+        save_tags(folder, tags)
+        console.print("[green]Tags saved.[/green]")
+
     # Upload to cloud if connected
-    if is_connected():
+    if tags_valid and is_connected():
         parsed = parse_folder_name(folder.name)
         date = parsed["date"] if parsed else ""
         success = upload_video(
@@ -429,6 +461,7 @@ def add_video(
             summary_md=summary_md,
             brief_summary_md=brief_summary_md,
             metadata=metadata,
+            tags=tags,
         )
         if success:
             console.print("[dim]Synced to cloud.[/dim]")
@@ -580,6 +613,7 @@ def sync_missing_videos(limit: int | None = DEFAULT_BATCH_SIZE):
         summary_md = read_summary(folder)
         brief_summary_md = read_brief_summary(folder)
         metadata = read_video_metadata(folder)
+        tags = read_tags(folder)
         success = upload_video(
             video_id=video_id,
             date=entry["date"],
@@ -588,6 +622,7 @@ def sync_missing_videos(limit: int | None = DEFAULT_BATCH_SIZE):
             summary_md=summary_md,
             brief_summary_md=brief_summary_md,
             metadata=metadata,
+            tags=tags,
         )
         if success:
             uploaded += 1
