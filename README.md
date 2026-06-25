@@ -73,10 +73,11 @@ Usage: yt [ARGS]...
 
   Commands:
     yt                        Interactive mode
-    yt <url>                  Fetch transcript & summarize a video
-    yt --ai_engine codex <url> Summarize with Codex instead of Claude
-    yt --model opus <url>     Summarize with a specific Claude model/alias
-    yt --opus <url>           Shortcut for yt --model opus <url>
+    yt <url> [url ...]        Fetch transcript & summarize video(s)
+    yt --force <url> [url ...] Regenerate already-saved video(s)
+    yt --ai_engine codex <url> [url ...] Summarize with Codex instead of Claude
+    yt --model opus <url> [url ...] Summarize with a specific Claude model/alias
+    yt --opus <url> [url ...] Shortcut for yt --model opus <url>
     yt list,    yt l          List latest 100 saved transcripts
     yt list --all             List all saved transcripts
     yt list --limit N         List latest N saved transcripts
@@ -173,6 +174,24 @@ This will:
 5. Generate the detailed summary and save `summary.md`
 
 If the video was already fetched, you'll be asked whether to skip or regenerate.
+
+You can process multiple videos in one run by passing each URL as a positional argument:
+
+```bash
+yt https://www.youtube.com/watch?v=dQw4w9WgXcQ https://youtu.be/9bZkp7q19f0
+```
+
+In batch mode, videos that were already fetched are skipped without prompting. Use `--force` or `--force-regenerate` to regenerate them:
+
+```bash
+yt --force https://www.youtube.com/watch?v=dQw4w9WgXcQ https://youtu.be/9bZkp7q19f0
+```
+
+Model and AI engine options apply to every URL in the batch:
+
+```bash
+yt --ai_engine codex --model latest https://youtu.be/video1 https://youtu.be/video2
+```
 
 Each video folder also includes `metadata.json` with structured video and processing metadata such as URL, author, fetched timestamp, AI engine, model, brief summary timestamp, and detailed summary timestamp. Cloud sync uploads this JSON metadata directly so the server does not need to parse markdown.
 

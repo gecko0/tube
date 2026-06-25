@@ -96,7 +96,7 @@ def parse_batch_options(
 
 def parse_model_options(args: tuple[str, ...]) -> tuple[str | None, tuple[str, ...]]:
     """Parse leading model options before the command or URL."""
-    model, _, remaining = parse_ai_options(args)
+    model, _, _, remaining = parse_video_options(args)
     return model, remaining
 
 
@@ -104,14 +104,26 @@ def parse_ai_options(
     args: tuple[str, ...],
 ) -> tuple[str | None, str | None, tuple[str, ...]]:
     """Parse leading AI options before the command or URL."""
+    model, ai_engine, _, remaining = parse_video_options(args)
+    return model, ai_engine, remaining
+
+
+def parse_video_options(
+    args: tuple[str, ...],
+) -> tuple[str | None, str | None, bool, tuple[str, ...]]:
+    """Parse leading video-processing options before the command or URL."""
     model: str | None = None
     ai_engine: str | None = None
+    regenerate = False
     remaining = list(args)
 
     while remaining:
         part = remaining[0]
         if part in MODEL_ALIAS_FLAGS:
             model = MODEL_ALIAS_FLAGS[part]
+            remaining.pop(0)
+        elif part in ("--force", "--force-regenerate"):
+            regenerate = True
             remaining.pop(0)
         elif part == "--model":
             if len(remaining) < 2 or remaining[1].startswith("--"):
@@ -140,7 +152,7 @@ def parse_ai_options(
         else:
             break
 
-    return model, ai_engine, tuple(remaining)
+    return model, ai_engine, regenerate, tuple(remaining)
 
 
 def parse_config_options(parts: tuple[str, ...] | list[str]) -> dict[str, str]:
@@ -282,6 +294,7 @@ def resolve_ref(ref: str | None) -> tuple[Path, str]:
 def add_video(
     url: str,
     regenerate: bool = False,
+    prompt_regenerate: bool = True,
     model: str | None = None,
     ai_engine: str | None = None,
 ):
@@ -296,8 +309,12 @@ def add_video(
     existing = find_by_video_id(video_id)
     if existing and not regenerate:
         console.print(f"[yellow]Already saved:[/yellow] {existing.name}")
+        if not prompt_regenerate:
+            console.print("[dim]Skipping. Use --force to regenerate in batch mode.[/dim]")
+            return
         if not click.confirm("Regenerate?"):
             return
+        regenerate = True
 
     console.print("[dim]Fetching metadata...[/dim]")
     metadata = fetch_metadata(video_id)
@@ -421,6 +438,37 @@ def add_video(
     console.print()
     console.print(Markdown(summary_text))
     console.print(f"\n[bold green]Done![/bold green] {folder}")
+
+
+def add_videos(
+    urls: tuple[str, ...],
+    regenerate: bool = False,
+    model: str | None = None,
+    ai_engine: str | None = None,
+):
+    """Process one or more YouTube URLs sequentially."""
+    total = len(urls)
+    for index, url in enumerate(urls, start=1):
+        if total > 1:
+            console.print()
+            console.print(f"[bold]Video {index}/{total}[/bold]")
+            add_video(
+                url,
+                regenerate=regenerate,
+                prompt_regenerate=False,
+                model=model,
+                ai_engine=ai_engine,
+            )
+        elif regenerate:
+            add_video(
+                url,
+                regenerate=True,
+                prompt_regenerate=True,
+                model=model,
+                ai_engine=ai_engine,
+            )
+        else:
+            add_video(url, model=model, ai_engine=ai_engine)
 
 
 def show_list(limit: int | None = DEFAULT_BATCH_SIZE):
@@ -664,10 +712,11 @@ def cli(args):
     \b
     Commands:
       yt                        Interactive mode
-      yt <url>                  Fetch transcript & summarize a video
-      yt --ai_engine codex <url> Summarize with Codex instead of Claude
-      yt --model opus <url>     Summarize with a specific Claude model/alias
-      yt --opus <url>           Shortcut for yt --model opus <url>
+      yt <url> [url ...]        Fetch transcript & summarize video(s)
+      yt --force <url> [url ...] Regenerate already-saved video(s)
+      yt --ai_engine codex <url> [url ...] Summarize with Codex instead of Claude
+      yt --model opus <url> [url ...] Summarize with a specific Claude model/alias
+      yt --opus <url> [url ...] Shortcut for yt --model opus <url>
       yt list,    yt l          List latest 100 saved transcripts
       yt list --all             List all saved transcripts
       yt list --limit N         List latest N saved transcripts
@@ -694,10 +743,11 @@ def cli(args):
         interactive_mode()
         return
 
-    model, ai_engine, args = parse_ai_options(args)
+    model, ai_engine, regenerate, args = parse_video_options(args)
     if not args:
         console.print(
             "[red]Usage:[/red] yt "
+            "[--force | --force-regenerate] "
             "[--ai_engine <engine>] "
             "[--model <model> | --sonnet | --opus | --fable] <url>"
         )
@@ -741,5 +791,5 @@ def cli(args):
     elif cmd == "setup-shell":
         setup_shell()
     else:
-        # Treat as a URL
-        add_video(cmd, model=model, ai_engine=ai_engine)
+        # Treat remaining positional args as URLs.
+        add_videos(args, regenerate=regenerate, model=model, ai_engine=ai_engine)

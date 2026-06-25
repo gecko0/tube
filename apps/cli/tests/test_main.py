@@ -11,6 +11,7 @@ from yt.main import (
     parse_ai_options,
     parse_config_options,
     parse_model_options,
+    parse_video_options,
     resolve_ref,
 )
 
@@ -121,6 +122,46 @@ class TestParseAiOptions:
 
         assert model is None
         assert ai_engine is None
+        assert args == ("list", "--limit", "3")
+
+
+# ---------------------------------------------------------------------------
+# parse_video_options
+# ---------------------------------------------------------------------------
+class TestParseVideoOptions:
+    def test_force_regenerate(self):
+        model, ai_engine, regenerate, args = parse_video_options(
+            ("--force-regenerate", "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        )
+
+        assert model is None
+        assert ai_engine is None
+        assert regenerate is True
+        assert args == ("https://www.youtube.com/watch?v=dQw4w9WgXcQ",)
+
+    def test_force_alias_with_ai_options(self):
+        model, ai_engine, regenerate, args = parse_video_options(
+            (
+                "--force",
+                "--ai_engine",
+                "codex",
+                "--model",
+                "latest",
+                "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            )
+        )
+
+        assert model == "latest"
+        assert ai_engine == "codex"
+        assert regenerate is True
+        assert args == ("https://www.youtube.com/watch?v=dQw4w9WgXcQ",)
+
+    def test_stops_before_command_options(self):
+        model, ai_engine, regenerate, args = parse_video_options(("list", "--limit", "3"))
+
+        assert model is None
+        assert ai_engine is None
+        assert regenerate is False
         assert args == ("list", "--limit", "3")
 
 
@@ -308,11 +349,132 @@ class TestAddVideoModelOptions:
         assert result.exit_code == 0
         mock_add_video.assert_called_once_with(url, model="latest", ai_engine="codex")
 
+    @patch("yt.main.add_video")
+    def test_force_regenerate_passes_regenerate_to_add_video(self, mock_add_video):
+        url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+        result = CliRunner().invoke(cli, ["--force-regenerate", url])
+
+        assert result.exit_code == 0
+        mock_add_video.assert_called_once_with(
+            url,
+            regenerate=True,
+            prompt_regenerate=True,
+            model=None,
+            ai_engine=None,
+        )
+
+    @patch("yt.main.add_video")
+    def test_multiple_urls_are_processed_in_order(self, mock_add_video):
+        urls = [
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            "https://youtu.be/9bZkp7q19f0",
+        ]
+
+        result = CliRunner().invoke(cli, urls)
+
+        assert result.exit_code == 0
+        assert mock_add_video.call_args_list == [
+            (
+                (urls[0],),
+                {
+                    "regenerate": False,
+                    "prompt_regenerate": False,
+                    "model": None,
+                    "ai_engine": None,
+                },
+            ),
+            (
+                (urls[1],),
+                {
+                    "regenerate": False,
+                    "prompt_regenerate": False,
+                    "model": None,
+                    "ai_engine": None,
+                },
+            ),
+        ]
+
+    @patch("yt.main.add_video")
+    def test_multiple_urls_receive_ai_options(self, mock_add_video):
+        urls = [
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            "https://youtu.be/9bZkp7q19f0",
+        ]
+
+        result = CliRunner().invoke(cli, ["--ai_engine", "codex", "--model", "latest", *urls])
+
+        assert result.exit_code == 0
+        assert mock_add_video.call_args_list == [
+            (
+                (urls[0],),
+                {
+                    "regenerate": False,
+                    "prompt_regenerate": False,
+                    "model": "latest",
+                    "ai_engine": "codex",
+                },
+            ),
+            (
+                (urls[1],),
+                {
+                    "regenerate": False,
+                    "prompt_regenerate": False,
+                    "model": "latest",
+                    "ai_engine": "codex",
+                },
+            ),
+        ]
+
+    @patch("yt.main.add_video")
+    def test_force_applies_to_multiple_urls(self, mock_add_video):
+        urls = [
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            "https://youtu.be/9bZkp7q19f0",
+        ]
+
+        result = CliRunner().invoke(cli, ["--force", *urls])
+
+        assert result.exit_code == 0
+        assert mock_add_video.call_args_list == [
+            (
+                (urls[0],),
+                {
+                    "regenerate": True,
+                    "prompt_regenerate": False,
+                    "model": None,
+                    "ai_engine": None,
+                },
+            ),
+            (
+                (urls[1],),
+                {
+                    "regenerate": True,
+                    "prompt_regenerate": False,
+                    "model": None,
+                    "ai_engine": None,
+                },
+            ),
+        ]
+
 
 # ---------------------------------------------------------------------------
 # add_video flow
 # ---------------------------------------------------------------------------
 class TestAddVideoFlow:
+    def test_add_video_skips_existing_without_prompt_in_batch_mode(self, transcripts_dir):
+        url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        (transcripts_dir / "2025-06-15 - dQw4w9WgXcQ - Existing").mkdir()
+
+        with (
+            patch("yt.main.click.confirm") as mock_confirm,
+            patch("yt.main.fetch_metadata") as mock_fetch_metadata,
+        ):
+            add_video(url, prompt_regenerate=False)
+
+        mock_confirm.assert_not_called()
+        mock_fetch_metadata.assert_not_called()
+
     def test_add_video_generates_brief_and_detailed_summaries(
         self,
         transcripts_dir,
