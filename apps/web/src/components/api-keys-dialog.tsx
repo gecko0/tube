@@ -33,6 +33,17 @@ async function hashKey(rawKey: string): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("")
 }
 
+function getConvexHttpUrl(): string {
+  const configuredUrl = String(import.meta.env.VITE_CONVEX_URL ?? "").replace(
+    /\/$/,
+    "",
+  )
+
+  return configuredUrl.endsWith(".convex.cloud")
+    ? configuredUrl.replace(/\.convex\.cloud$/, ".convex.site")
+    : configuredUrl
+}
+
 function generateRawKey(): string {
   const bytes = new Uint8Array(32)
   crypto.getRandomValues(bytes)
@@ -122,13 +133,22 @@ function NewKeyDisplay({
   apiKey: string
   onDismiss: () => void
 }) {
-  const [copied, setCopied] = useState(false)
+  const convexUrl = getConvexHttpUrl()
+  const connectCommand = `yt --connection_key <key> connect ${apiKey} --convex_url ${convexUrl}`
+  const [copiedApiKey, setCopiedApiKey] = useState(false)
+  const [copiedCommand, setCopiedCommand] = useState(false)
 
-  const handleCopy = useCallback(async () => {
+  const handleCopyApiKey = useCallback(async () => {
     await navigator.clipboard.writeText(apiKey)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    setCopiedApiKey(true)
+    setTimeout(() => setCopiedApiKey(false), 2000)
   }, [apiKey])
+
+  const handleCopyCommand = useCallback(async () => {
+    await navigator.clipboard.writeText(connectCommand)
+    setCopiedCommand(true)
+    setTimeout(() => setCopiedCommand(false), 2000)
+  }, [connectCommand])
 
   return (
     <div className="rounded-md border border-amber-500/70 bg-amber-50 p-4 dark:bg-amber-950/20">
@@ -149,22 +169,47 @@ function NewKeyDisplay({
               variant="outline"
               size="icon"
               className="shrink-0"
-              onClick={handleCopy}
+              onClick={handleCopyApiKey}
+              title="Copy API key"
             >
-              {copied ? (
+              {copiedApiKey ? (
                 <Check className="size-4 text-green-600" />
               ) : (
                 <Copy className="size-4" />
               )}
             </Button>
           </div>
-          <p className="text-xs text-amber-800 dark:text-amber-200">
-            Run{" "}
-            <code className="rounded bg-background/80 px-1">
-              yt connect {apiKey}
-            </code>{" "}
-            to connect your CLI.
-          </p>
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-amber-950 dark:text-amber-100">
+              Convex URL
+            </p>
+            <code className="block overflow-x-auto rounded bg-background/80 px-2 py-1.5 text-xs text-amber-950 dark:text-amber-100">
+              {convexUrl}
+            </code>
+          </div>
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-amber-950 dark:text-amber-100">
+              CLI setup command
+            </p>
+            <div className="flex items-start gap-2">
+              <code className="block min-w-0 flex-1 overflow-x-auto rounded bg-background/80 px-2 py-1.5 font-mono text-xs text-amber-950 dark:text-amber-100">
+                {connectCommand}
+              </code>
+              <Button
+                variant="outline"
+                size="icon"
+                className="shrink-0"
+                onClick={handleCopyCommand}
+                title="Copy setup command"
+              >
+                {copiedCommand ? (
+                  <Check className="size-4 text-green-600" />
+                ) : (
+                  <Copy className="size-4" />
+                )}
+              </Button>
+            </div>
+          </div>
           <Button variant="ghost" size="sm" onClick={onDismiss}>
             Dismiss
           </Button>
@@ -177,8 +222,10 @@ function NewKeyDisplay({
 export function ApiKeysPanel() {
   const apiKeys = useQuery(api.apiKeys.list)
   const revokeKey = useMutation(api.apiKeys.revoke)
+  const convexUrl = getConvexHttpUrl()
   const [createOpen, setCreateOpen] = useState(false)
   const [generatedKey, setGeneratedKey] = useState<string | null>(null)
+  const [copiedConvexUrl, setCopiedConvexUrl] = useState(false)
   const [revokeTarget, setRevokeTarget] = useState<Id<"apiKeys"> | null>(null)
 
   const handleRevoke = useCallback(async () => {
@@ -187,19 +234,41 @@ export function ApiKeysPanel() {
     setRevokeTarget(null)
   }, [revokeKey, revokeTarget])
 
+  const handleCopyConvexUrl = useCallback(async () => {
+    await navigator.clipboard.writeText(convexUrl)
+    setCopiedConvexUrl(true)
+    setTimeout(() => setCopiedConvexUrl(false), 2000)
+  }, [convexUrl])
+
   return (
     <>
       <div className="space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-sm font-medium">CLI access</h2>
-            <p className="text-sm text-muted-foreground">
-              Create a key, then run <code>yt connect &lt;key&gt;</code>.
-            </p>
-          </div>
+        <div className="flex items-center gap-3">
           <Button size="sm" onClick={() => setCreateOpen(true)}>
             <Plus className="size-4" />
             Create key
+          </Button>
+        </div>
+
+        <div className="flex items-center gap-3 rounded-md border px-3 py-2">
+          <p className="shrink-0 text-xs font-medium text-muted-foreground">
+            Convex URL
+          </p>
+          <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-xs">
+            {convexUrl}
+          </code>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="shrink-0"
+            onClick={handleCopyConvexUrl}
+            title="Copy Convex URL"
+          >
+            {copiedConvexUrl ? (
+              <Check className="size-4 text-green-600" />
+            ) : (
+              <Copy className="size-4" />
+            )}
           </Button>
         </div>
 
