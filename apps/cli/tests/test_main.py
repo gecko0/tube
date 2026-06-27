@@ -10,6 +10,7 @@ from yt.main import (
     delete_video_cmd,
     parse_ai_options,
     parse_config_options,
+    parse_connection_options,
     parse_model_options,
     parse_video_options,
     resolve_ref,
@@ -43,6 +44,43 @@ class TestParseConfigOptions:
             "convex_url": "https://example.convex.site",
             "ai_engine": "codex",
         }
+
+
+# ---------------------------------------------------------------------------
+# parse_connection_options
+# ---------------------------------------------------------------------------
+class TestParseConnectionOptions:
+    def test_prod_flag(self):
+        connection_key, args = parse_connection_options(("--prod", "sync"))
+
+        assert connection_key == "prod"
+        assert args == ("sync",)
+
+    def test_dev_flag(self):
+        connection_key, args = parse_connection_options(("--dev", "sync"))
+
+        assert connection_key == "dev"
+        assert args == ("sync",)
+
+    def test_connection_key_with_space(self):
+        connection_key, args = parse_connection_options(
+            ("--connection_key", "staging", "sync")
+        )
+
+        assert connection_key == "staging"
+        assert args == ("sync",)
+
+    def test_connection_key_with_equals(self):
+        connection_key, args = parse_connection_options(
+            ("--connection_key=staging", "sync")
+        )
+
+        assert connection_key == "staging"
+        assert args == ("sync",)
+
+    def test_rejects_conflicting_connection_options(self):
+        with pytest.raises(SystemExit):
+            parse_connection_options(("--prod", "--dev", "sync"))
 
 
 # ---------------------------------------------------------------------------
@@ -348,6 +386,20 @@ class TestAddVideoModelOptions:
 
         assert result.exit_code == 0
         mock_add_video.assert_called_once_with(url, model="latest", ai_engine="codex")
+
+    @patch("yt.main.add_video")
+    def test_prod_option_passes_connection_key_to_add_video(self, mock_add_video):
+        url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+        result = CliRunner().invoke(cli, ["--prod", url])
+
+        assert result.exit_code == 0
+        mock_add_video.assert_called_once_with(
+            url,
+            model=None,
+            ai_engine=None,
+            connection_key="prod",
+        )
 
     @patch("yt.main.add_video")
     def test_force_regenerate_passes_regenerate_to_add_video(self, mock_add_video):

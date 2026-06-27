@@ -4,6 +4,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from yt.cloud import (
+    DEFAULT_PROD_CONVEX_URL,
+    get_connection,
     get_missing_video_ids,
     is_connected,
     load_config,
@@ -59,6 +61,56 @@ class TestIsConnected:
     def test_connected_when_key_present(self, config_path):
         save_config({"api_key": "my-key"})
         assert is_connected() is True
+
+    def test_connected_for_named_connection(self, config_path):
+        save_config(
+            {
+                "connections": {
+                    "prod": {
+                        "api_key": "prod-key",
+                        "convex_url": DEFAULT_PROD_CONVEX_URL,
+                    }
+                }
+            }
+        )
+
+        assert is_connected("prod") is True
+
+    def test_not_connected_for_missing_named_key(self, config_path):
+        save_config({"connections": {"prod": {"convex_url": DEFAULT_PROD_CONVEX_URL}}})
+
+        assert is_connected("prod") is False
+
+
+# ---------------------------------------------------------------------------
+# get_connection
+# ---------------------------------------------------------------------------
+class TestGetConnection:
+    def test_resolves_default_connection(self, config_path):
+        config = {
+            "default_connection_key": "prod",
+            "connections": {
+                "prod": {
+                    "api_key": "prod-key",
+                    "convex_url": DEFAULT_PROD_CONVEX_URL,
+                }
+            },
+        }
+
+        assert get_connection(config) == {
+            "connection_key": "prod",
+            "api_key": "prod-key",
+            "convex_url": DEFAULT_PROD_CONVEX_URL,
+        }
+
+    def test_resolves_legacy_flat_config(self, config_path):
+        config = {"api_key": "legacy-key"}
+
+        assert get_connection(config) == {
+            "connection_key": None,
+            "api_key": "legacy-key",
+            "convex_url": "https://sensible-alligator-750.convex.site",
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +198,34 @@ class TestUploadVideo:
         url = mock_post.call_args.args[0]
         assert url == "https://custom.convex.site/api/upload"
 
+    def test_uses_named_connection(self, config_path):
+        save_config(
+            {
+                "connections": {
+                    "prod": {
+                        "api_key": "prod-key",
+                        "convex_url": DEFAULT_PROD_CONVEX_URL,
+                    }
+                }
+            }
+        )
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+
+        with patch("yt.cloud.requests.post", return_value=mock_resp) as mock_post:
+            result = upload_video(
+                "vid1",
+                "2025-06-15",
+                "Title",
+                "transcript",
+                None,
+                connection_key="prod",
+            )
+
+        assert result is True
+        assert mock_post.call_args.args[0] == f"{DEFAULT_PROD_CONVEX_URL}/api/upload"
+        assert mock_post.call_args.kwargs["headers"]["Authorization"] == "Bearer prod-key"
+
 
 # ---------------------------------------------------------------------------
 # get_missing_video_ids
@@ -178,22 +258,110 @@ class TestGetMissingVideoIds:
         with patch("yt.cloud.requests.post", return_value=mock_resp):
             assert get_missing_video_ids(["vid1"]) is None
 
+    def test_uses_named_connection(self, config_path):
+        save_config(
+            {
+                "connections": {
+                    "prod": {
+                        "api_key": "prod-key",
+                        "convex_url": DEFAULT_PROD_CONVEX_URL,
+                    }
+                }
+            }
+        )
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"missingVideoIds": []}
+
+        with patch("yt.cloud.requests.post", return_value=mock_resp) as mock_post:
+            result = get_missing_video_ids(["vid1"], connection_key="prod")
+
+        assert result == []
+        assert mock_post.call_args.args[0] == f"{DEFAULT_PROD_CONVEX_URL}/api/missing"
+        assert mock_post.call_args.kwargs["headers"]["Authorization"] == "Bearer prod-key"
+
 
 # ---------------------------------------------------------------------------
 # CLI connect / disconnect commands
 # ---------------------------------------------------------------------------
 class TestConnectDisconnect:
-    def test_connect_saves_key(self, config_path):
+    def test_connect_requires_selected_or_default_connection(self, config_path):
         from click.testing import CliRunner
 
         from yt.main import cli
 
         runner = CliRunner()
         result = runner.invoke(cli, ["connect", "my-secret-key"])
+        assert result.exit_code != 0
+        assert "Choose a cloud connection first" in result.output
+
+    def test_prod_connect_saves_named_connection(self, config_path):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["--prod", "connect", "my-secret-key"])
         assert result.exit_code == 0
         assert "Connected" in result.output
         config = json.loads(config_path.read_text())
-        assert config["api_key"] == "my-secret-key"
+        assert config["connections"]["prod"] == {
+            "api_key": "my-secret-key",
+            "convex_url": DEFAULT_PROD_CONVEX_URL,
+        }
+
+    def test_connect_uses_default_connection(self, config_path):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        save_config({"default_connection_key": "prod"})
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["connect", "my-secret-key"])
+
+        assert result.exit_code == 0
+        config = json.loads(config_path.read_text())
+        assert config["connections"]["prod"]["api_key"] == "my-secret-key"
+        assert config["connections"]["prod"]["convex_url"] == DEFAULT_PROD_CONVEX_URL
+
+    def test_custom_connection_requires_convex_url(self, config_path):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli, ["--connection_key", "staging", "connect", "my-secret-key"]
+        )
+
+        assert result.exit_code != 0
+        assert "Missing Convex URL" in result.output
+
+    def test_custom_connection_saves_url_and_key(self, config_path):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "--connection_key",
+                "staging",
+                "connect",
+                "my-secret-key",
+                "--convex_url",
+                "https://staging.convex.site",
+            ],
+        )
+
+        assert result.exit_code == 0
+        config = json.loads(config_path.read_text())
+        assert config["connections"]["staging"] == {
+            "api_key": "my-secret-key",
+            "convex_url": "https://staging.convex.site",
+        }
 
     def test_connect_without_key_fails(self, config_path):
         from click.testing import CliRunner
@@ -205,7 +373,17 @@ class TestConnectDisconnect:
         assert result.exit_code != 0
 
     def test_disconnect_removes_key(self, config_path):
-        save_config({"api_key": "old-key", "convex_url": "https://x.convex.site"})
+        save_config(
+            {
+                "default_connection_key": "prod",
+                "connections": {
+                    "prod": {
+                        "api_key": "old-key",
+                        "convex_url": DEFAULT_PROD_CONVEX_URL,
+                    }
+                },
+            }
+        )
 
         from click.testing import CliRunner
 
@@ -216,8 +394,21 @@ class TestConnectDisconnect:
         assert result.exit_code == 0
         assert "Disconnected" in result.output
         config = json.loads(config_path.read_text())
+        assert "api_key" not in config["connections"]["prod"]
+        assert config["connections"]["prod"]["convex_url"] == DEFAULT_PROD_CONVEX_URL
+
+    def test_legacy_disconnect_removes_flat_key(self, config_path):
+        save_config({"api_key": "old-key", "convex_url": "https://x.convex.site"})
+
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        result = CliRunner().invoke(cli, ["disconnect"])
+
+        assert result.exit_code == 0
+        config = json.loads(config_path.read_text())
         assert "api_key" not in config
-        # Other config keys preserved
         assert config["convex_url"] == "https://x.convex.site"
 
 
@@ -248,6 +439,31 @@ class TestConfigCommand:
         assert "Set" in result.output
         config = json.loads(config_path.read_text())
         assert config["model"] == "opus"
+
+    def test_sets_default_connection_key(self, config_path):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        result = CliRunner().invoke(
+            cli, ["config", "--default_connection_key", "prod"]
+        )
+
+        assert result.exit_code == 0
+        config = json.loads(config_path.read_text())
+        assert config["default_connection_key"] == "prod"
+
+    def test_rejects_unknown_default_connection_key(self, config_path):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        result = CliRunner().invoke(
+            cli, ["config", "--default_connection_key", "staging"]
+        )
+
+        assert result.exit_code != 0
+        assert "Unknown connection key" in result.output
 
     def test_sets_brief_summary_prompt_inline(self, config_path):
         from click.testing import CliRunner
@@ -346,6 +562,116 @@ class TestConfigCommand:
         assert "api_key" in result.output
         assert "my-secret-key" not in result.output
 
+    def test_shows_connections_with_masked_keys(self, config_path):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        save_config(
+            {
+                "connections": {
+                    "prod": {
+                        "api_key": "my-secret-key",
+                        "convex_url": DEFAULT_PROD_CONVEX_URL,
+                    }
+                }
+            }
+        )
+
+        result = CliRunner().invoke(cli, ["config"])
+
+        assert result.exit_code == 0
+        assert "connections" in result.output
+        assert "my-secret-key" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# CLI connection command
+# ---------------------------------------------------------------------------
+class TestConnectionCommand:
+    def test_connection_default_sets_default(self, config_path):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        result = CliRunner().invoke(cli, ["connection", "default", "prod"])
+
+        assert result.exit_code == 0
+        config = json.loads(config_path.read_text())
+        assert config["default_connection_key"] == "prod"
+
+    def test_connection_list_shows_connections(self, config_path):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        save_config(
+            {
+                "default_connection_key": "prod",
+                "connections": {
+                    "prod": {
+                        "api_key": "my-secret-key",
+                        "convex_url": DEFAULT_PROD_CONVEX_URL,
+                    }
+                },
+            }
+        )
+
+        result = CliRunner().invoke(cli, ["connection", "list"])
+
+        assert result.exit_code == 0
+        assert "prod" in result.output
+        assert DEFAULT_PROD_CONVEX_URL in result.output
+        assert "my-secret-key" not in result.output
+
+    def test_connection_show_uses_default(self, config_path):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        save_config(
+            {
+                "default_connection_key": "prod",
+                "connections": {
+                    "prod": {
+                        "api_key": "my-secret-key",
+                        "convex_url": DEFAULT_PROD_CONVEX_URL,
+                    }
+                },
+            }
+        )
+
+        result = CliRunner().invoke(cli, ["connection", "show"])
+
+        assert result.exit_code == 0
+        assert "prod" in result.output
+        assert DEFAULT_PROD_CONVEX_URL in result.output
+        assert "my-secret-key" not in result.output
+
+    def test_connection_remove_clears_default(self, config_path):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        save_config(
+            {
+                "default_connection_key": "prod",
+                "connections": {
+                    "prod": {
+                        "api_key": "my-secret-key",
+                        "convex_url": DEFAULT_PROD_CONVEX_URL,
+                    }
+                },
+            }
+        )
+
+        result = CliRunner().invoke(cli, ["connection", "remove", "prod"])
+
+        assert result.exit_code == 0
+        config = json.loads(config_path.read_text())
+        assert "prod" not in config["connections"]
+        assert "default_connection_key" not in config
+
 
 # ---------------------------------------------------------------------------
 # CLI sync command
@@ -408,6 +734,47 @@ class TestSync:
             brief_summary_md="# Brief summary",
             metadata=None,
             tags=["python", "ai"],
+        )
+
+    def test_sync_uses_selected_connection(self, config_path, transcripts_dir):
+        from click.testing import CliRunner
+
+        from yt.main import cli
+
+        save_config(
+            {
+                "connections": {
+                    "prod": {
+                        "api_key": "prod-key",
+                        "convex_url": DEFAULT_PROD_CONVEX_URL,
+                    }
+                }
+            }
+        )
+
+        local_only = transcripts_dir / "2025-06-15 - localonly01 - Local Only"
+        local_only.mkdir()
+        (local_only / "transcript.md").write_text("# Local transcript", encoding="utf-8")
+
+        runner = CliRunner()
+        with (
+            patch("yt.main.get_missing_video_ids", return_value=["localonly01"]) as mock_missing,
+            patch("yt.main.upload_video", return_value=True) as mock_upload,
+        ):
+            result = runner.invoke(cli, ["--prod", "sync"])
+
+        assert result.exit_code == 0
+        mock_missing.assert_called_once_with(["localonly01"], connection_key="prod")
+        mock_upload.assert_called_once_with(
+            video_id="localonly01",
+            date="2025-06-15",
+            title="Local Only",
+            transcript_md="# Local transcript",
+            summary_md=None,
+            brief_summary_md=None,
+            metadata=None,
+            tags=None,
+            connection_key="prod",
         )
 
     def test_sync_defaults_to_latest_100(self, config_path, transcripts_dir):

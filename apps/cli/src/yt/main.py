@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -11,6 +12,8 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .cloud import (
+    KNOWN_CONNECTION_URLS,
+    get_connection,
     get_missing_video_ids,
     is_connected,
     load_config,
@@ -48,7 +51,14 @@ from .transcript import (
 
 console = Console()
 DEFAULT_BATCH_SIZE = 100
-CONFIG_KEYS = {"api_key", "convex_url", "model", "ai_engine", BRIEF_SUMMARY_PROMPT_KEY}
+CONFIG_KEYS = {
+    "api_key",
+    "convex_url",
+    "default_connection_key",
+    "model",
+    "ai_engine",
+    BRIEF_SUMMARY_PROMPT_KEY,
+}
 RESETTABLE_CONFIG_KEYS = {BRIEF_SUMMARY_PROMPT_KEY}
 SECRET_CONFIG_KEYS = {"api_key"}
 MODEL_ALIAS_FLAGS = {
@@ -56,6 +66,52 @@ MODEL_ALIAS_FLAGS = {
     "--opus": "opus",
     "--fable": "fable",
 }
+
+
+def parse_connection_options(
+    args: tuple[str, ...],
+) -> tuple[str | None, tuple[str, ...]]:
+    """Parse leading cloud connection selection options."""
+    connection_key: str | None = None
+    remaining = list(args)
+
+    def select(value: str):
+        nonlocal connection_key
+        if connection_key and connection_key != value:
+            console.print(
+                "[red]Choose only one cloud connection option:[/red] "
+                "--dev, --prod, or --connection_key"
+            )
+            sys.exit(1)
+        connection_key = value
+
+    while remaining:
+        part = remaining[0]
+        if part == "--dev":
+            select("dev")
+            remaining.pop(0)
+        elif part == "--prod":
+            select("prod")
+            remaining.pop(0)
+        elif part in ("--connection_key", "--connection-key"):
+            if len(remaining) < 2 or remaining[1].startswith("--"):
+                console.print("[red]Usage:[/red] yt --connection_key <key> <command>")
+                sys.exit(1)
+            select(remaining[1])
+            del remaining[:2]
+        elif part.startswith("--connection_key=") or part.startswith(
+            "--connection-key="
+        ):
+            value = part.split("=", 1)[1]
+            if not value:
+                console.print("[red]Usage:[/red] yt --connection_key=<key> <command>")
+                sys.exit(1)
+            select(value)
+            remaining.pop(0)
+        else:
+            break
+
+    return connection_key, tuple(remaining)
 
 
 def parse_batch_options(
@@ -169,6 +225,7 @@ def parse_config_options(parts: tuple[str, ...] | list[str]) -> dict[str, str]:
             console.print(
                 "[red]Usage:[/red] yt config "
                 "[--api_key KEY] [--convex_url URL] "
+                "[--default_connection_key KEY] "
                 "[--model MODEL] [--ai_engine ENGINE] "
                 "[--brief_summary_prompt PROMPT|@FILE]"
             )
@@ -193,7 +250,8 @@ def parse_config_options(parts: tuple[str, ...] | list[str]) -> dict[str, str]:
             console.print(f"[red]Unknown config key:[/red] {key}")
             console.print(
                 "[dim]Supported keys: ai_engine, api_key, "
-                "brief_summary_prompt, convex_url, model[/dim]"
+                "brief_summary_prompt, convex_url, "
+                "default_connection_key, model[/dim]"
             )
             sys.exit(1)
 
@@ -233,7 +291,137 @@ def parse_config_reset_options(parts: tuple[str, ...] | list[str]) -> set[str]:
     return reset_keys
 
 
-def format_config_value(key: str, value: str) -> str:
+def parse_connect_options(parts: tuple[str, ...] | list[str]) -> dict[str, str]:
+    """Parse options accepted by yt connect."""
+    updates: dict[str, str] = {}
+    i = 0
+    while i < len(parts):
+        part = parts[i]
+        if part in ("--convex_url", "--convex-url"):
+            if i + 1 >= len(parts) or parts[i + 1].startswith("--"):
+                console.print(
+                    "[red]Usage:[/red] yt --connection_key <key> "
+                    "connect <api-key> --convex_url <url>"
+                )
+                sys.exit(1)
+            updates["convex_url"] = parts[i + 1]
+            i += 2
+        elif part.startswith("--convex_url=") or part.startswith("--convex-url="):
+            value = part.split("=", 1)[1]
+            if not value:
+                console.print("[red]Missing value for --convex_url.[/red]")
+                sys.exit(1)
+            updates["convex_url"] = value
+            i += 1
+        else:
+            console.print(f"[red]Unknown option for yt connect:[/red] {part}")
+            sys.exit(1)
+    return updates
+
+
+def validate_default_connection_key(config: dict, connection_key: str):
+    connections = config.get("connections")
+    has_connection = isinstance(connections, dict) and connection_key in connections
+    if connection_key not in KNOWN_CONNECTION_URLS and not has_connection:
+        console.print(
+            f"[red]Unknown connection key:[/red] {connection_key}\n"
+            "[dim]Create it first with "
+            "yt --connection_key <key> connect <api-key> --convex_url <url>[/dim]"
+        )
+        sys.exit(1)
+
+
+def selected_or_default_connection_key(
+    config: dict, selected_connection_key: str | None
+) -> str | None:
+    if selected_connection_key:
+        return selected_connection_key
+
+    default_connection_key = config.get("default_connection_key")
+    if isinstance(default_connection_key, str) and default_connection_key:
+        return default_connection_key
+
+    return None
+
+
+def connect_cmd(
+    api_key: str,
+    selected_connection_key: str | None,
+    option_parts: tuple[str, ...] | list[str],
+):
+    """Save an API key for the selected named connection."""
+    options = parse_connect_options(option_parts)
+    config = load_config()
+    connection_key = selected_or_default_connection_key(config, selected_connection_key)
+
+    if not connection_key:
+        console.print(
+            "[red]Choose a cloud connection first.[/red]\n"
+            "[dim]Examples: yt --prod connect <api-key>, "
+            "yt --dev connect <api-key>, or "
+            "yt connection default prod[/dim]"
+        )
+        sys.exit(1)
+
+    connections = config.get("connections")
+    if not isinstance(connections, dict):
+        connections = {}
+    existing = connections.get(connection_key, {})
+    if not isinstance(existing, dict):
+        existing = {}
+
+    convex_url = (
+        options.get("convex_url")
+        or existing.get("convex_url")
+        or KNOWN_CONNECTION_URLS.get(connection_key)
+    )
+    if not convex_url:
+        console.print(
+            f"[red]Missing Convex URL for connection:[/red] {connection_key}\n"
+            "[dim]Use --convex_url <url> when creating a custom connection.[/dim]"
+        )
+        sys.exit(1)
+
+    connections[connection_key] = {"api_key": api_key, "convex_url": convex_url}
+    config["connections"] = connections
+    # Once named connections are configured, prefer them over legacy flat keys.
+    config.pop("api_key", None)
+    config.pop("convex_url", None)
+    save_config(config)
+    console.print(
+        f"[green]Connected![/green] Saved API key for "
+        f"[bold]{connection_key}[/bold] ({convex_url})"
+    )
+
+
+def format_secret(value: str) -> str:
+    return f"{value[:4]}...{value[-4:]}" if len(value) > 8 else "****"
+
+
+def format_connections_value(connections: object) -> str:
+    if not isinstance(connections, dict):
+        return str(connections)
+    masked: dict[str, dict[str, str]] = {}
+    for key, value in sorted(connections.items()):
+        if not isinstance(value, dict):
+            masked[key] = {"value": str(value)}
+            continue
+        masked[key] = {}
+        if value.get("convex_url"):
+            masked[key]["convex_url"] = str(value["convex_url"])
+        if value.get("api_key"):
+            masked[key]["api_key"] = format_secret(str(value["api_key"]))
+    return json_dumps_compact(masked)
+
+
+def json_dumps_compact(value: object) -> str:
+    return json.dumps(value, sort_keys=True)
+
+
+def format_config_value(key: str, value: object) -> str:
+    if key == "connections":
+        return format_connections_value(value)
+    value = str(value)
     if key in SECRET_CONFIG_KEYS and value:
         return f"{value[:4]}...{value[-4:]}" if len(value) > 8 else "****"
     if key == BRIEF_SUMMARY_PROMPT_KEY and len(value) > 80:
@@ -257,6 +445,11 @@ def config_cmd(parts: tuple[str, ...] | list[str]):
     updates = parse_config_options(parts)
 
     if updates:
+        updated_config = {**config, **updates}
+        if "default_connection_key" in updates:
+            validate_default_connection_key(
+                updated_config, updates["default_connection_key"]
+            )
         config.update(updates)
         save_config(config)
         for key, value in updates.items():
@@ -271,8 +464,113 @@ def config_cmd(parts: tuple[str, ...] | list[str]):
     table.add_column("Key")
     table.add_column("Value")
     for key in sorted(config):
-        table.add_row(key, format_config_value(key, str(config[key])))
+        table.add_row(key, format_config_value(key, config[key]))
     console.print(table)
+
+
+def connection_list_cmd(config: dict):
+    connections = config.get("connections")
+    if not isinstance(connections, dict) or not connections:
+        console.print("[dim]No named cloud connections saved yet.[/dim]")
+        return
+
+    default_key = config.get("default_connection_key")
+    table = Table(title="Cloud Connections")
+    table.add_column("Default")
+    table.add_column("Key")
+    table.add_column("URL")
+    table.add_column("API Key")
+    for key, value in sorted(connections.items()):
+        if not isinstance(value, dict):
+            continue
+        api_key = str(value.get("api_key", ""))
+        table.add_row(
+            "*" if key == default_key else "",
+            key,
+            str(value.get("convex_url", "")),
+            format_secret(api_key) if api_key else "",
+        )
+    console.print(table)
+
+
+def connection_show_cmd(config: dict, connection_key: str | None):
+    key = connection_key or config.get("default_connection_key")
+    if not isinstance(key, str) or not key:
+        console.print("[red]No connection key provided and no default is set.[/red]")
+        sys.exit(1)
+
+    connection = get_connection(config, key)
+    if not connection:
+        console.print(f"[red]Connection is not configured:[/red] {key}")
+        sys.exit(1)
+
+    table = Table(title=f"Cloud Connection: {key}")
+    table.add_column("Key")
+    table.add_column("Value")
+    table.add_row("connection_key", key)
+    table.add_row("convex_url", str(connection["convex_url"]))
+    table.add_row("api_key", format_secret(str(connection["api_key"])))
+    table.add_row(
+        "default",
+        "yes" if config.get("default_connection_key") == key else "no",
+    )
+    console.print(table)
+
+
+def connection_default_cmd(config: dict, connection_key: str):
+    validate_default_connection_key(config, connection_key)
+    config["default_connection_key"] = connection_key
+    save_config(config)
+    console.print(f"[green]Default connection set to[/green] {connection_key}")
+
+
+def connection_remove_cmd(config: dict, connection_key: str):
+    connections = config.get("connections")
+    if not isinstance(connections, dict) or connection_key not in connections:
+        console.print(f"[red]Connection not found:[/red] {connection_key}")
+        sys.exit(1)
+
+    del connections[connection_key]
+    if config.get("default_connection_key") == connection_key:
+        config.pop("default_connection_key", None)
+    save_config(config)
+    console.print(f"[green]Removed connection[/green] {connection_key}")
+
+
+def connection_cmd(parts: tuple[str, ...] | list[str]):
+    """Manage named cloud connections."""
+    if not parts:
+        console.print(
+            "[red]Usage:[/red] yt connection "
+            "list|show [key]|default <key>|remove <key>"
+        )
+        sys.exit(1)
+
+    config = load_config()
+    action = parts[0]
+    if action == "list":
+        if len(parts) != 1:
+            console.print("[red]Usage:[/red] yt connection list")
+            sys.exit(1)
+        connection_list_cmd(config)
+    elif action == "show":
+        if len(parts) > 2:
+            console.print("[red]Usage:[/red] yt connection show [key]")
+            sys.exit(1)
+        connection_show_cmd(config, parts[1] if len(parts) == 2 else None)
+    elif action == "default":
+        if len(parts) != 2:
+            console.print("[red]Usage:[/red] yt connection default <key>")
+            sys.exit(1)
+        connection_default_cmd(config, parts[1])
+    elif action == "remove":
+        if len(parts) != 2:
+            console.print("[red]Usage:[/red] yt connection remove <key>")
+            sys.exit(1)
+        connection_remove_cmd(config, parts[1])
+    else:
+        console.print(f"[red]Unknown connection command:[/red] {action}")
+        sys.exit(1)
 
 
 def resolve_ref(ref: str | None) -> tuple[Path, str]:
@@ -300,6 +598,7 @@ def add_video(
     prompt_regenerate: bool = True,
     model: str | None = None,
     ai_engine: str | None = None,
+    connection_key: str | None = None,
 ):
     """Core flow: fetch transcript, summarize, save."""
     try:
@@ -450,23 +749,30 @@ def add_video(
         console.print("[green]Tags saved.[/green]")
 
     # Upload to cloud if connected
-    if tags_valid and is_connected():
+    if tags_valid and is_connected(connection_key):
         parsed = parse_folder_name(folder.name)
         date = parsed["date"] if parsed else ""
-        success = upload_video(
-            video_id=video_id,
-            date=date,
-            title=title,
-            transcript_md=transcript_text,
-            summary_md=summary_md,
-            brief_summary_md=brief_summary_md,
-            metadata=metadata,
-            tags=tags,
-        )
+        upload_kwargs = {
+            "video_id": video_id,
+            "date": date,
+            "title": title,
+            "transcript_md": transcript_text,
+            "summary_md": summary_md,
+            "brief_summary_md": brief_summary_md,
+            "metadata": metadata,
+            "tags": tags,
+        }
+        if connection_key:
+            upload_kwargs["connection_key"] = connection_key
+        success = upload_video(**upload_kwargs)
         if success:
             console.print("[dim]Synced to cloud.[/dim]")
         else:
             console.print("[yellow]Warning: cloud sync failed.[/yellow]")
+    elif tags_valid and connection_key:
+        console.print(
+            f"[yellow]Warning: cloud connection '{connection_key}' is not configured.[/yellow]"
+        )
 
     console.print()
     console.print(Markdown(summary_text))
@@ -478,6 +784,7 @@ def add_videos(
     regenerate: bool = False,
     model: str | None = None,
     ai_engine: str | None = None,
+    connection_key: str | None = None,
 ):
     """Process one or more YouTube URLs sequentially."""
     total = len(urls)
@@ -485,23 +792,30 @@ def add_videos(
         if total > 1:
             console.print()
             console.print(f"[bold]Video {index}/{total}[/bold]")
-            add_video(
-                url,
-                regenerate=regenerate,
-                prompt_regenerate=False,
-                model=model,
-                ai_engine=ai_engine,
-            )
+            add_kwargs = {
+                "regenerate": regenerate,
+                "prompt_regenerate": False,
+                "model": model,
+                "ai_engine": ai_engine,
+            }
+            if connection_key:
+                add_kwargs["connection_key"] = connection_key
+            add_video(url, **add_kwargs)
         elif regenerate:
-            add_video(
-                url,
-                regenerate=True,
-                prompt_regenerate=True,
-                model=model,
-                ai_engine=ai_engine,
-            )
+            add_kwargs = {
+                "regenerate": True,
+                "prompt_regenerate": True,
+                "model": model,
+                "ai_engine": ai_engine,
+            }
+            if connection_key:
+                add_kwargs["connection_key"] = connection_key
+            add_video(url, **add_kwargs)
         else:
-            add_video(url, model=model, ai_engine=ai_engine)
+            add_kwargs = {"model": model, "ai_engine": ai_engine}
+            if connection_key:
+                add_kwargs["connection_key"] = connection_key
+            add_video(url, **add_kwargs)
 
 
 def show_list(limit: int | None = DEFAULT_BATCH_SIZE):
@@ -569,10 +883,26 @@ def delete_video_cmd(ref: str | None):
     console.print("[green]Deleted.[/green]")
 
 
-def sync_missing_videos(limit: int | None = DEFAULT_BATCH_SIZE):
+def sync_missing_videos(
+    limit: int | None = DEFAULT_BATCH_SIZE,
+    connection_key: str | None = None,
+):
     """Upload local transcripts that are missing from the cloud backend."""
-    if not is_connected():
-        console.print("[red]Connect first:[/red] yt connect <api-key>")
+    if not is_connected(connection_key):
+        if connection_key in ("dev", "prod"):
+            console.print(
+                f"[red]Connect first:[/red] yt --{connection_key} connect <api-key>"
+            )
+        elif connection_key:
+            console.print(
+                f"[red]Connect first:[/red] yt --connection_key {connection_key} "
+                "connect <api-key> --convex_url <url>"
+            )
+        else:
+            console.print(
+                "[red]Connect first:[/red] yt --prod connect <api-key> "
+                "or yt --dev connect <api-key>"
+            )
         sys.exit(1)
 
     transcripts = list_transcripts(limit=limit, newest_first=True)
@@ -581,7 +911,12 @@ def sync_missing_videos(limit: int | None = DEFAULT_BATCH_SIZE):
         return
 
     video_ids = [entry["video_id"] for entry in transcripts]
-    missing_video_ids = get_missing_video_ids(video_ids)
+    if connection_key:
+        missing_video_ids = get_missing_video_ids(
+            video_ids, connection_key=connection_key
+        )
+    else:
+        missing_video_ids = get_missing_video_ids(video_ids)
     if missing_video_ids is None:
         console.print("[red]Unable to check cloud sync status.[/red]")
         sys.exit(1)
@@ -614,16 +949,19 @@ def sync_missing_videos(limit: int | None = DEFAULT_BATCH_SIZE):
         brief_summary_md = read_brief_summary(folder)
         metadata = read_video_metadata(folder)
         tags = read_tags(folder)
-        success = upload_video(
-            video_id=video_id,
-            date=entry["date"],
-            title=entry["title"],
-            transcript_md=transcript_md,
-            summary_md=summary_md,
-            brief_summary_md=brief_summary_md,
-            metadata=metadata,
-            tags=tags,
-        )
+        upload_kwargs = {
+            "video_id": video_id,
+            "date": entry["date"],
+            "title": entry["title"],
+            "transcript_md": transcript_md,
+            "summary_md": summary_md,
+            "brief_summary_md": brief_summary_md,
+            "metadata": metadata,
+            "tags": tags,
+        }
+        if connection_key:
+            upload_kwargs["connection_key"] = connection_key
+        success = upload_video(**upload_kwargs)
         if success:
             uploaded += 1
             console.print(f"[green]Uploaded[/green] {video_id}")
@@ -752,6 +1090,9 @@ def cli(args):
       yt --ai_engine codex <url> [url ...] Summarize with Codex instead of Claude
       yt --model opus <url> [url ...] Summarize with a specific Claude model/alias
       yt --opus <url> [url ...] Shortcut for yt --model opus <url>
+      yt --dev ...              Use the dev cloud connection for this command
+      yt --prod ...             Use the prod cloud connection for this command
+      yt --connection_key KEY ... Use a named cloud connection for this command
       yt list,    yt l          List latest 100 saved transcripts
       yt list --all             List all saved transcripts
       yt list --limit N         List latest N saved transcripts
@@ -759,8 +1100,13 @@ def cli(args):
       yt summary, yt s [video_id]    View summary (latest if omitted)
       yt delete,  yt d [video_id]    Delete transcript & summary (latest if omitted)
       yt web,     yt w [port]   Open web viewer (default port 8765)
-      yt connect  <key>         Connect to cloud with API key
+      yt connect  <key>         Connect selected/default cloud connection
+      yt connection list        List named cloud connections
+      yt connection show [key]  Show a named cloud connection
+      yt connection default <key> Set the default cloud connection
+      yt connection remove <key> Remove a named cloud connection
       yt config                 Show saved config
+      yt config --default_connection_key prod Set default cloud connection
       yt config --ai_engine codex Set default AI engine
       yt config --model opus    Set default summarization model
       yt config --brief_summary_prompt @prompt.md Set brief summary prompt
@@ -778,10 +1124,12 @@ def cli(args):
         interactive_mode()
         return
 
+    connection_key, args = parse_connection_options(args)
     model, ai_engine, regenerate, args = parse_video_options(args)
     if not args:
         console.print(
             "[red]Usage:[/red] yt "
+            "[--dev | --prod | --connection_key <key>] "
             "[--force | --force-regenerate] "
             "[--ai_engine <engine>] "
             "[--model <model> | --sonnet | --opus | --fable] <url>"
@@ -807,24 +1155,45 @@ def cli(args):
         run_server(port)
     elif cmd in ("c", "connect"):
         if ref is None:
-            console.print("[red]Usage: yt connect <api-key>[/red]")
+            console.print(
+                "[red]Usage: yt [--dev | --prod | --connection_key KEY] "
+                "connect <api-key> [--convex_url URL][/red]"
+            )
             sys.exit(1)
-        config = load_config()
-        config["api_key"] = ref
-        save_config(config)
-        console.print("[green]Connected![/green] API key saved to ~/.yt/config.json")
+        connect_cmd(ref, connection_key, args[2:])
+    elif cmd == "connection":
+        connection_cmd(args[1:])
     elif cmd == "config":
         config_cmd(args[1:])
     elif cmd == "sync":
         limit = parse_batch_options(args[1:], "yt sync", DEFAULT_BATCH_SIZE)
-        sync_missing_videos(limit)
+        sync_missing_videos(limit, connection_key=connection_key)
     elif cmd == "disconnect":
         config = load_config()
-        config.pop("api_key", None)
+        disconnect_key = selected_or_default_connection_key(config, connection_key)
+        if disconnect_key:
+            connections = config.get("connections")
+            connection = (
+                connections.get(disconnect_key, {})
+                if isinstance(connections, dict)
+                else {}
+            )
+            if isinstance(connection, dict):
+                connection.pop("api_key", None)
+                connections[disconnect_key] = connection
+                config["connections"] = connections
+        else:
+            config.pop("api_key", None)
         save_config(config)
         console.print("[green]Disconnected.[/green] API key removed.")
     elif cmd == "setup-shell":
         setup_shell()
     else:
         # Treat remaining positional args as URLs.
-        add_videos(args, regenerate=regenerate, model=model, ai_engine=ai_engine)
+        add_videos(
+            args,
+            regenerate=regenerate,
+            model=model,
+            ai_engine=ai_engine,
+            connection_key=connection_key,
+        )

@@ -78,6 +78,9 @@ Usage: yt [ARGS]...
     yt --ai_engine codex <url> [url ...] Summarize with Codex instead of Claude
     yt --model opus <url> [url ...] Summarize with a specific Claude model/alias
     yt --opus <url> [url ...] Shortcut for yt --model opus <url>
+    yt --dev ...              Use the dev cloud connection for this command
+    yt --prod ...             Use the prod cloud connection for this command
+    yt --connection_key KEY ... Use a named cloud connection for this command
     yt list,    yt l          List latest 100 saved transcripts
     yt list --all             List all saved transcripts
     yt list --limit N         List latest N saved transcripts
@@ -85,8 +88,13 @@ Usage: yt [ARGS]...
     yt summary, yt s [video_id]    View summary (latest if omitted)
     yt delete,  yt d [video_id]    Delete transcript & summary (latest if omitted)
     yt web,     yt w [port]   Open web viewer (default port 8765)
-    yt connect  <key>         Connect to cloud with API key
+    yt connect  <key>         Connect selected/default cloud connection
+    yt connection list        List named cloud connections
+    yt connection show [key]  Show a named cloud connection
+    yt connection default <key> Set the default cloud connection
+    yt connection remove <key> Remove a named cloud connection
     yt config                 Show saved config
+    yt config --default_connection_key prod Set default cloud connection
     yt config --ai_engine codex Set default AI engine
     yt config --model opus    Set default summarization model
     yt config --brief_summary_prompt @prompt.md Set brief summary prompt
@@ -283,10 +291,20 @@ Connect to the cloud backend to access your transcripts from anywhere:
 
 ```bash
 # 1. Sign in at the web app and generate an API key in Settings
-# 2. Connect your CLI
-yt connect <your-api-key>
+# 2. Connect your CLI to production
+yt --prod connect <your-api-key>
+
+# 3. Set production as the default connection
+yt connection default prod
+# Equivalent:
+yt config --default_connection_key prod
 
 # Now every `yt <url>` will automatically sync to the cloud
+
+# Use a specific connection for one command
+yt --prod https://www.youtube.com/watch?v=dQw4w9WgXcQ
+yt --dev sync
+yt --connection_key staging sync
 
 # Upload the latest 100 local transcripts that are missing from the cloud
 yt sync
@@ -297,6 +315,29 @@ yt sync --all
 
 # To disconnect
 yt disconnect
+```
+
+Known cloud connection aliases:
+
+| Key | Convex HTTP URL |
+| --- | --- |
+| `dev` | `https://sensible-alligator-750.convex.site` |
+| `prod` | `https://exuberant-squirrel-58.convex.site` |
+
+For a custom backend, provide both a connection key and URL:
+
+```bash
+yt --connection_key staging connect <your-api-key> --convex_url https://staging.convex.site
+yt connection default staging
+```
+
+Manage saved connections:
+
+```bash
+yt connection list
+yt connection show
+yt connection show prod
+yt connection remove staging
 ```
 
 When connected, `yt <url>` saves locally as usual and also uploads the transcript, summaries, metadata, and tags to the Convex cloud backend. If the upload fails, the CLI warns but doesn't block. If tag generation returns invalid structured output, the CLI keeps the local transcript and summaries but skips cloud sync for that run to avoid sending partial tag data.
