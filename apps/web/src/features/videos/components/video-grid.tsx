@@ -114,7 +114,12 @@ export function VideoGrid({
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 p-4 sm:p-6">
       <div className="flex min-h-8 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="truncate text-xl font-semibold">{title}</h1>
+        <div className="flex min-w-0 items-center gap-2">
+          <h1 className="truncate text-xl font-semibold">{title}</h1>
+          <Badge variant="secondary" className="shrink-0">
+            {videos.length}
+          </Badge>
+        </div>
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-3">
           <div className="relative w-full sm:w-64">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -156,9 +161,6 @@ export function VideoGrid({
               </Button>
             </>
           )}
-          <span className="text-sm text-muted-foreground">
-            {videos.length} {videos.length === 1 ? "video" : "videos"}
-          </span>
         </div>
       </div>
 
