@@ -224,14 +224,7 @@ export function VideosPage() {
         onFolderDrop={handleFolderDrop}
       />
       <SidebarInset>
-        <VideosHeader
-          detail={detail}
-          fallbackTitle={folderViewTitle}
-          selectionActive={selectionActive}
-          onArchiveToggle={handleArchiveToggle}
-          onDeleteVideo={videoDeleteDialog.open}
-          onReadToggle={handleReadToggle}
-        />
+        <VideosHeader />
         <VideoDeleteDialog
           detail={detail ?? null}
           dialog={videoDeleteDialog}
@@ -253,7 +246,14 @@ export function VideosPage() {
               <span className="text-muted-foreground">Loading...</span>
             </div>
           ) : detail ? (
-            <VideoDetail detail={detail} onTagsChange={handleSubmitTags} />
+            <VideoDetail
+              detail={detail}
+              showActions={!selectionActive}
+              onArchiveToggle={handleArchiveToggle}
+              onDeleteVideo={videoDeleteDialog.open}
+              onReadToggle={handleReadToggle}
+              onTagsChange={handleSubmitTags}
+            />
           ) : (
             <VideoGrid
               title={folderViewTitle}

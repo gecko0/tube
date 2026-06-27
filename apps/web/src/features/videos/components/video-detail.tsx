@@ -5,10 +5,15 @@ import "streamdown/styles.css"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import { VideoTagEditor } from "@/features/videos/components/video-tag-editor"
+import { VideoActionsMenu } from "@/features/videos/video-actions-menu"
 import type { VideoDetail as VideoDetailType } from "@/lib/types"
 
 interface VideoDetailProps {
   detail: VideoDetailType
+  showActions: boolean
+  onArchiveToggle: () => void
+  onDeleteVideo: () => void
+  onReadToggle: () => void
   onTagsChange: (tags: string[]) => Promise<void>
 }
 
@@ -53,7 +58,14 @@ function stripSummaryHeader(markdown: string | null): string | null {
   return lines.join("\n").trim()
 }
 
-export function VideoDetail({ detail, onTagsChange }: VideoDetailProps) {
+export function VideoDetail({
+  detail,
+  showActions,
+  onArchiveToggle,
+  onDeleteVideo,
+  onReadToggle,
+  onTagsChange,
+}: VideoDetailProps) {
   const metadataItems = [
     formatDate(detail.date),
     detail.metadata?.author,
@@ -82,21 +94,31 @@ export function VideoDetail({ detail, onTagsChange }: VideoDetailProps) {
       </div>
 
       {/* Info bar */}
-      <div>
-        <h1 className="text-xl font-semibold">
-          <a
-            href={`https://www.youtube.com/watch?v=${detail.videoId}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:underline"
-          >
-            {detail.title}
-          </a>
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {metadataItems.join(" | ")}
-        </p>
-        <VideoTagEditor tags={detail.tags} onChange={onTagsChange} />
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold">
+            <a
+              href={`https://www.youtube.com/watch?v=${detail.videoId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:underline"
+            >
+              {detail.title}
+            </a>
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {metadataItems.join(" | ")}
+          </p>
+          <VideoTagEditor tags={detail.tags} onChange={onTagsChange} />
+        </div>
+        {showActions && (
+          <VideoActionsMenu
+            detail={detail}
+            onArchiveToggle={onArchiveToggle}
+            onDelete={onDeleteVideo}
+            onReadToggle={onReadToggle}
+          />
+        )}
       </div>
 
       <Separator />
