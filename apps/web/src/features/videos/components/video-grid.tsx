@@ -103,14 +103,6 @@ export function VideoGrid({
   const selectionCount = selectedVideoIds.size
   const selectionActive = selectionCount > 0
 
-  if (loading) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <span className="text-sm text-muted-foreground">Loading...</span>
-      </div>
-    )
-  }
-
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 p-4 sm:p-6">
       <div className="flex min-h-8 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -164,7 +156,11 @@ export function VideoGrid({
         </div>
       </div>
 
-      {videos.length === 0 ? (
+      {loading ? (
+        <div className="flex h-64 items-center justify-center rounded-md border border-dashed">
+          <span className="text-sm text-muted-foreground">Loading...</span>
+        </div>
+      ) : videos.length === 0 ? (
         <div className="flex h-64 items-center justify-center rounded-md border border-dashed">
           <span className="text-sm text-muted-foreground">{emptyLabel}</span>
         </div>

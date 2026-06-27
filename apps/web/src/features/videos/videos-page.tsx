@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { FolderFormDialog } from "@/components/folder-form-dialog"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/features/videos/components/app-sidebar"
@@ -21,9 +21,24 @@ import { VideosHeader } from "@/features/videos/videos-header"
 import { useDialog, useDialogWithData } from "@/hooks/use-dialog"
 import type { FolderScope, FolderSummary } from "@/lib/types"
 
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value)
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedValue(value)
+    }, delayMs)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [delayMs, value])
+
+  return debouncedValue
+}
+
 export function VideosPage() {
   const [folderScope, setFolderScope] = useState<FolderScope>({ kind: "all" })
   const [tagFilter, setTagFilter] = useState("")
+  const debouncedTagFilter = useDebouncedValue(tagFilter.trim(), 300)
   const videoDeleteDialog = useDialog()
   const folderFormDialog = useDialogWithData<FolderSummary>()
   const folderDeleteDialog = useDialogWithData<FolderSummary>()
@@ -50,7 +65,7 @@ export function VideosPage() {
   } = useVideosPageData({
     folderScope,
     selectedVideoId,
-    tagFilter,
+    tagFilter: debouncedTagFilter,
   })
   const {
     archiveManyVideos,
@@ -116,8 +131,7 @@ export function VideosPage() {
   const handleTagFilterChange = useCallback((tag: string) => {
     setTagFilter(tag)
     clearMultiSelection()
-    clearOpenVideo()
-  }, [clearMultiSelection, clearOpenVideo])
+  }, [clearMultiSelection])
 
   const handleMoveSelectionToInbox = useCallback(async () => {
     const videoIds = Array.from(selectedVideoIds)
