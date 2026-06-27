@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -823,3 +824,17 @@ class TestSync:
         assert result.exit_code == 0
         expected_ids = [f"vid{i:08d}" for i in range(105, 0, -1)]
         mock_missing.assert_called_once_with(expected_ids)
+
+    def test_cloud_video_lists_sort_by_local_processed_date(self):
+        repo_root = Path(__file__).resolve().parents[3]
+        schema = (repo_root / "apps/web/convex/schema.ts").read_text(
+            encoding="utf-8"
+        )
+        videos = (repo_root / "apps/web/convex/videos.ts").read_text(
+            encoding="utf-8"
+        )
+
+        assert '.index("by_userId_and_archivedAt_and_date", [' in schema
+        assert '.index("by_userId_and_folderId_and_archivedAt_and_date", [' in schema
+        assert '.withIndex("by_userId_and_archivedAt_and_date"' in videos
+        assert '.withIndex("by_userId_and_folderId_and_archivedAt_and_date"' in videos

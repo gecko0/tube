@@ -188,12 +188,12 @@ export const listPage = query({
         : args.folderScope.kind === "all"
           ? ctx.db
               .query("videos")
-              .withIndex("by_userId_and_archivedAt", (q) =>
+              .withIndex("by_userId_and_archivedAt_and_date", (q) =>
                 q.eq("userId", userId).eq("archivedAt", undefined)
               )
           : ctx.db
               .query("videos")
-              .withIndex("by_userId_and_folderId_and_archivedAt", (q) =>
+              .withIndex("by_userId_and_folderId_and_archivedAt_and_date", (q) =>
                 q
                   .eq("userId", userId)
                   .eq(

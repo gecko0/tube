@@ -21,11 +21,22 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_userId_and_videoId", ["userId", "videoId"])
     .index("by_userId_and_archivedAt", ["userId", "archivedAt"])
+    .index("by_userId_and_archivedAt_and_date", [
+      "userId",
+      "archivedAt",
+      "date",
+    ])
     .index("by_userId_and_folderId", ["userId", "folderId"])
     .index("by_userId_and_folderId_and_archivedAt", [
       "userId",
       "folderId",
       "archivedAt",
+    ])
+    .index("by_userId_and_folderId_and_archivedAt_and_date", [
+      "userId",
+      "folderId",
+      "archivedAt",
+      "date",
     ]),
 
   videoTags: defineTable({
