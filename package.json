@@ -10,6 +10,7 @@
     "web:build": "pnpm --filter web build",
     "web:dev": "pnpm --filter web dev",
     "web:lint": "pnpm --filter web lint",
+    "web:test": "pnpm --filter web test",
     "web-local:build": "pnpm --filter web-local build",
     "web-local:dev": "pnpm --filter web-local dev",
     "web-local:lint": "pnpm --filter web-local lint"

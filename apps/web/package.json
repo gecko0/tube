@@ -10,7 +10,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test tests/run-tests.mjs"
   },
   "dependencies": {
     "@clerk/react": "^6.9.1",
