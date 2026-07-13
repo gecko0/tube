@@ -343,6 +343,33 @@ export const markUnread = mutation({
   },
 });
 
+export const rename = mutation({
+  args: { videoId: v.string(), title: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+    const userId = identity.subject;
+    const video = await ctx.db
+      .query("videos")
+      .withIndex("by_userId_and_videoId", (q) =>
+        q.eq("userId", userId).eq("videoId", args.videoId)
+      )
+      .unique();
+    if (!video) {
+      throw new Error("Video not found");
+    }
+
+    const title = args.title.trim();
+    if (!title) {
+      throw new Error("Video title is required");
+    }
+
+    await ctx.db.patch(video._id, { title });
+    return null;
+  },
+});
+
 export const archive = mutation({
   args: { videoId: v.string() },
   returns: v.null(),

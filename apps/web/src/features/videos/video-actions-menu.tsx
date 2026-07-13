@@ -1,4 +1,12 @@
-import { Archive, ArchiveRestore, Ellipsis, Eye, EyeOff, Trash2 } from "lucide-react"
+import {
+  Archive,
+  ArchiveRestore,
+  Ellipsis,
+  Eye,
+  EyeOff,
+  Pencil,
+  Trash2,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -14,11 +22,13 @@ export function VideoActionsMenu({
   onArchiveToggle,
   onDelete,
   onReadToggle,
+  onRename,
 }: {
   detail: VideoDetail
   onArchiveToggle: () => void
   onDelete: () => void
   onReadToggle: () => void
+  onRename: () => void
 }) {
   return (
     <DropdownMenu>
@@ -40,6 +50,10 @@ export function VideoActionsMenu({
               Mark as unread
             </>
           )}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onRename}>
+          <Pencil />
+          Rename
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={onArchiveToggle}>

@@ -6,6 +6,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import { VideoTagEditor } from "@/features/videos/components/video-tag-editor"
 import { VideoActionsMenu } from "@/features/videos/video-actions-menu"
+import { VideoRenameDialog } from "@/features/videos/video-rename-dialog"
+import { useDialog } from "@/hooks/use-dialog"
 import type { VideoDetail as VideoDetailType } from "@/lib/types"
 
 interface VideoDetailProps {
@@ -66,6 +68,7 @@ export function VideoDetail({
   onReadToggle,
   onTagsChange,
 }: VideoDetailProps) {
+  const renameDialog = useDialog()
   const metadataItems = [
     formatDate(detail.date),
     detail.metadata?.author,
@@ -82,6 +85,7 @@ export function VideoDetail({
 
   return (
     <div className="flex flex-col gap-6 p-6 max-w-4xl mx-auto w-full">
+      <VideoRenameDialog detail={detail} dialog={renameDialog} />
       {/* Embedded YouTube player */}
       <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-muted">
         <iframe
@@ -117,6 +121,7 @@ export function VideoDetail({
             onArchiveToggle={onArchiveToggle}
             onDelete={onDeleteVideo}
             onReadToggle={onReadToggle}
+            onRename={renameDialog.open}
           />
         )}
       </div>

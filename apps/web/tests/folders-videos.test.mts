@@ -220,6 +220,45 @@ test("videos can be moved back to Inbox", async (t) => {
   assert.equal((await ctx.db.get(videoId)).folderId, undefined)
 })
 
+test("videos can be renamed by their owner", async (t) => {
+  t.after(() => {
+    Date.now = now
+  })
+  const ctx = createCtx()
+  const videoDocumentId = await insertVideo(ctx, {
+    videoId: "rename-me",
+    title: "Original title",
+  })
+
+  await call(videos.rename, ctx, {
+    videoId: "rename-me",
+    title: "  Updated title  ",
+  })
+
+  assert.equal((await ctx.db.get(videoDocumentId)).title, "Updated title")
+})
+
+test("renaming a video rejects empty titles and videos owned by another user", async (t) => {
+  t.after(() => {
+    Date.now = now
+  })
+  const ownerCtx = createCtx("user-a")
+  const otherCtx = { ...createCtx("user-b"), db: ownerCtx.db }
+  await insertVideo(ownerCtx, { videoId: "private-video" })
+
+  await assert.rejects(
+    call(videos.rename, ownerCtx, { videoId: "private-video", title: "   " }),
+    /Video title is required/
+  )
+  await assert.rejects(
+    call(videos.rename, otherCtx, {
+      videoId: "private-video",
+      title: "Stolen title",
+    }),
+    /Video not found/
+  )
+})
+
 test("deleting a non-empty folder archives active videos and clears folder membership", async (t) => {
   t.after(() => {
     Date.now = now
