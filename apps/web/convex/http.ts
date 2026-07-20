@@ -2,6 +2,7 @@ import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { normalizeTags } from "./tagUtils";
+import type { Id } from "./_generated/dataModel";
 
 const http = httpRouter();
 
@@ -66,22 +67,32 @@ async function getKeyHash(req: Request) {
     .join("");
 }
 
+async function authenticateApiKey(
+  req: Request,
+  resolveApiKey: (keyHash: string) => Promise<string | null>
+) {
+  const keyHash = await getKeyHash(req);
+  if (!keyHash) {
+    return { response: jsonResponse({ error: "Missing API key" }, 401) };
+  }
+
+  const userId = await resolveApiKey(keyHash);
+  if (!userId) {
+    return { response: jsonResponse({ error: "Invalid API key" }, 401) };
+  }
+
+  return { userId };
+}
+
 http.route({
   path: "/api/upload",
   method: "POST",
   handler: httpAction(async (ctx, req) => {
-    const keyHash = await getKeyHash(req);
-    if (!keyHash) {
-      return jsonResponse({ error: "Missing API key" }, 401);
-    }
-
-    const userId: string | null = await ctx.runQuery(
-      internal.auth.resolveApiKey,
-      { keyHash }
+    const auth = await authenticateApiKey(req, (keyHash) =>
+      ctx.runQuery(internal.auth.resolveApiKey, { keyHash })
     );
-    if (!userId) {
-      return jsonResponse({ error: "Invalid API key" }, 401);
-    }
+    if (auth.response) return auth.response;
+    const userId = auth.userId;
 
     const body = await req.json();
     const parsedTags = parseUploadTags(body.tags);
@@ -110,18 +121,11 @@ http.route({
   path: "/api/missing",
   method: "POST",
   handler: httpAction(async (ctx, req) => {
-    const keyHash = await getKeyHash(req);
-    if (!keyHash) {
-      return jsonResponse({ error: "Missing API key" }, 401);
-    }
-
-    const userId: string | null = await ctx.runQuery(
-      internal.auth.resolveApiKey,
-      { keyHash }
+    const auth = await authenticateApiKey(req, (keyHash) =>
+      ctx.runQuery(internal.auth.resolveApiKey, { keyHash })
     );
-    if (!userId) {
-      return jsonResponse({ error: "Invalid API key" }, 401);
-    }
+    if (auth.response) return auth.response;
+    const userId = auth.userId;
 
     const body: unknown = await req.json().catch(() => null);
     if (
@@ -140,6 +144,117 @@ http.route({
     );
 
     return jsonResponse({ missingVideoIds }, 200);
+  }),
+});
+
+http.route({
+  path: "/api/queue/claim",
+  method: "POST",
+  handler: httpAction(async (ctx, req) => {
+    const auth = await authenticateApiKey(req, (keyHash) =>
+      ctx.runQuery(internal.auth.resolveApiKey, { keyHash })
+    );
+    if (auth.response) return auth.response;
+    const userId = auth.userId;
+
+    const body: unknown = await req.json().catch(() => null);
+    if (
+      !body ||
+      typeof body !== "object" ||
+      !("workerId" in body) ||
+      typeof body.workerId !== "string" ||
+      !body.workerId
+    ) {
+      return jsonResponse({ error: "Expected workerId" }, 400);
+    }
+
+    const item = await ctx.runMutation(internal.transcriptionQueue.claimNext, {
+      userId,
+      workerId: body.workerId,
+    });
+
+    return jsonResponse({ item }, 200);
+  }),
+});
+
+http.route({
+  path: "/api/queue/complete",
+  method: "POST",
+  handler: httpAction(async (ctx, req) => {
+    const auth = await authenticateApiKey(req, (keyHash) =>
+      ctx.runQuery(internal.auth.resolveApiKey, { keyHash })
+    );
+    if (auth.response) return auth.response;
+    const userId = auth.userId;
+
+    const body: unknown = await req.json().catch(() => null);
+    if (
+      !body ||
+      typeof body !== "object" ||
+      !("id" in body) ||
+      typeof body.id !== "string" ||
+      !("workerId" in body) ||
+      typeof body.workerId !== "string" ||
+      !body.workerId
+    ) {
+      return jsonResponse({ error: "Expected id and workerId" }, 400);
+    }
+
+    const ok: boolean = await ctx.runMutation(
+      internal.transcriptionQueue.completeClaimed,
+      {
+        userId,
+        id: body.id as Id<"transcriptionQueue">,
+        workerId: body.workerId,
+      }
+    );
+    if (!ok) {
+      return jsonResponse({ error: "Queue claim not found" }, 409);
+    }
+
+    return jsonResponse({ ok: true }, 200);
+  }),
+});
+
+http.route({
+  path: "/api/queue/fail",
+  method: "POST",
+  handler: httpAction(async (ctx, req) => {
+    const auth = await authenticateApiKey(req, (keyHash) =>
+      ctx.runQuery(internal.auth.resolveApiKey, { keyHash })
+    );
+    if (auth.response) return auth.response;
+    const userId = auth.userId;
+
+    const body: unknown = await req.json().catch(() => null);
+    if (
+      !body ||
+      typeof body !== "object" ||
+      !("id" in body) ||
+      typeof body.id !== "string" ||
+      !("workerId" in body) ||
+      typeof body.workerId !== "string" ||
+      !body.workerId ||
+      !("errorMessage" in body) ||
+      typeof body.errorMessage !== "string"
+    ) {
+      return jsonResponse({ error: "Expected id, workerId, and errorMessage" }, 400);
+    }
+
+    const ok: boolean = await ctx.runMutation(
+      internal.transcriptionQueue.failClaimed,
+      {
+        userId,
+        id: body.id as Id<"transcriptionQueue">,
+        workerId: body.workerId,
+        errorMessage: body.errorMessage,
+      }
+    );
+    if (!ok) {
+      return jsonResponse({ error: "Queue claim not found" }, 409);
+    }
+
+    return jsonResponse({ ok: true }, 200);
   }),
 });
 

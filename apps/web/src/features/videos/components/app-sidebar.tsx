@@ -2,6 +2,7 @@ import {
   Archive,
   Folder,
   Inbox,
+  ListChecks,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -34,13 +35,16 @@ import {
 import { useState, type DragEvent } from "react"
 import type { Id } from "../../../../convex/_generated/dataModel"
 import type { VideoDropTarget } from "@/features/videos/types"
-import type { FolderScope, FolderSummary } from "@/lib/types"
+import type { AppView, FolderScope, FolderSummary } from "@/lib/types"
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
+  activeView: AppView
   folders: FolderSummary[]
   folderScope: FolderScope
   dropTargetKey: string | null
+  queueCount: number
   onFolderScopeChange: (scope: FolderScope) => void
+  onQueueOpen: () => void
   onCreateFolder: () => void
   onRenameFolder: (folder: FolderSummary) => void
   onDeleteFolder: (folder: FolderSummary) => void
@@ -108,10 +112,13 @@ function FolderDropButton({
 }
 
 export function AppSidebar({
+  activeView,
   folders,
   folderScope,
   dropTargetKey,
+  queueCount,
   onFolderScopeChange,
+  onQueueOpen,
   onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
@@ -137,7 +144,7 @@ export function AppSidebar({
           <SidebarGroupContent>
             <SidebarMenu>
               <FolderDropButton
-                active={currentScopeKey === "all"}
+                active={activeView === "videos" && currentScopeKey === "all"}
                 dropActive={false}
                 icon={<Video className="size-4" />}
                 label="All videos"
@@ -147,7 +154,7 @@ export function AppSidebar({
                 onDrop={(event) => event.preventDefault()}
               />
               <FolderDropButton
-                active={currentScopeKey === "inbox"}
+                active={activeView === "videos" && currentScopeKey === "inbox"}
                 dropActive={dropTargetKey === "inbox"}
                 icon={<Inbox className="size-4" />}
                 label="Inbox"
@@ -157,7 +164,7 @@ export function AppSidebar({
                 onDrop={(event) => onFolderDrop(event, "inbox")}
               />
               <FolderDropButton
-                active={currentScopeKey === "archived"}
+                active={activeView === "videos" && currentScopeKey === "archived"}
                 dropActive={dropTargetKey === "archived"}
                 icon={<Archive className="size-4" />}
                 label="Archived"
@@ -165,6 +172,17 @@ export function AppSidebar({
                 onDragOver={(event) => onFolderDragOver(event, "archived")}
                 onDragLeave={onFolderDragLeave}
                 onDrop={(event) => onFolderDrop(event, "archived")}
+              />
+              <FolderDropButton
+                active={activeView === "queue"}
+                dropActive={false}
+                icon={<ListChecks className="size-4" />}
+                label="Queue"
+                count={queueCount}
+                onClick={onQueueOpen}
+                onDragOver={(event) => event.preventDefault()}
+                onDragLeave={onFolderDragLeave}
+                onDrop={(event) => event.preventDefault()}
               />
             </SidebarMenu>
           </SidebarGroupContent>
@@ -190,7 +208,7 @@ export function AppSidebar({
               {folders.map((folder) => (
                 <FolderDropButton
                   key={folder._id}
-                  active={currentScopeKey === folder._id}
+                  active={activeView === "videos" && currentScopeKey === folder._id}
                   dropActive={dropTargetKey === folder._id}
                   icon={<Folder className="size-4" />}
                   label={folder.name}

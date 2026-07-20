@@ -6,6 +6,9 @@ export type FolderScope =
   | { kind: "archived" }
   | { kind: "folder"; folderId: Id<"folders"> }
 
+export type AppView = "videos" | "queue"
+export type QueueStatus = "queued" | "processing" | "error"
+
 export interface VideoMetadata {
   version?: number
   videoId?: string
@@ -62,4 +65,18 @@ export interface FolderSummary {
   name: string
   parentFolderId?: Id<"folders">
   videoCount: number
+}
+
+export interface TranscriptionQueueItem {
+  _id: Id<"transcriptionQueue">
+  _creationTime: number
+  videoId: string
+  url: string
+  status: QueueStatus
+  errorMessage?: string
+  attempts: number
+  createdAt: number
+  updatedAt: number
+  claimedBy?: string
+  claimExpiresAt?: number
 }

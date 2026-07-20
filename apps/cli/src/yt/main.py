@@ -3,6 +3,8 @@ import os
 import shutil
 import subprocess
 import sys
+import time
+import uuid
 from pathlib import Path
 
 import click
@@ -13,6 +15,9 @@ from rich.table import Table
 
 from .cloud import (
     KNOWN_CONNECTION_URLS,
+    claim_queue_item,
+    complete_queue_item,
+    fail_queue_item,
     get_connection,
     get_missing_video_ids,
     is_connected,
@@ -599,6 +604,7 @@ def add_video(
     model: str | None = None,
     ai_engine: str | None = None,
     connection_key: str | None = None,
+    require_cloud_sync: bool = False,
 ):
     """Core flow: fetch transcript, summarize, save."""
     try:
@@ -749,6 +755,7 @@ def add_video(
         console.print("[green]Tags saved.[/green]")
 
     # Upload to cloud if connected
+    cloud_synced = False
     if tags_valid and is_connected(connection_key):
         parsed = parse_folder_name(folder.name)
         date = parsed["date"] if parsed else ""
@@ -766,6 +773,7 @@ def add_video(
             upload_kwargs["connection_key"] = connection_key
         success = upload_video(**upload_kwargs)
         if success:
+            cloud_synced = True
             console.print("[dim]Synced to cloud.[/dim]")
         else:
             console.print("[yellow]Warning: cloud sync failed.[/yellow]")
@@ -773,6 +781,9 @@ def add_video(
         console.print(
             f"[yellow]Warning: cloud connection '{connection_key}' is not configured.[/yellow]"
         )
+
+    if require_cloud_sync and not cloud_synced:
+        raise RuntimeError("cloud sync failed")
 
     console.print()
     console.print(Markdown(summary_text))
@@ -977,6 +988,225 @@ def sync_missing_videos(
         sys.exit(1)
 
 
+def parse_queue_listen_options(
+    parts: tuple[str, ...] | list[str],
+) -> tuple[bool, int]:
+    """Parse options accepted by yt queue listen."""
+    once = False
+    poll_interval = 10
+    i = 0
+    while i < len(parts):
+        part = parts[i]
+        if part == "--once":
+            once = True
+            i += 1
+        elif part == "--poll-interval":
+            if i + 1 >= len(parts):
+                console.print(
+                    "[red]Usage:[/red] yt queue listen "
+                    "[--once] [--poll-interval N]"
+                )
+                sys.exit(1)
+            try:
+                poll_interval = int(parts[i + 1])
+            except ValueError:
+                console.print("[red]--poll-interval must be a positive integer.[/red]")
+                sys.exit(1)
+            if poll_interval < 1:
+                console.print("[red]--poll-interval must be a positive integer.[/red]")
+                sys.exit(1)
+            i += 2
+        elif part.startswith("--poll-interval="):
+            value = part.split("=", 1)[1]
+            try:
+                poll_interval = int(value)
+            except ValueError:
+                console.print("[red]--poll-interval must be a positive integer.[/red]")
+                sys.exit(1)
+            if poll_interval < 1:
+                console.print("[red]--poll-interval must be a positive integer.[/red]")
+                sys.exit(1)
+            i += 1
+        else:
+            console.print(f"[red]Unknown option for yt queue listen:[/red] {part}")
+            console.print(
+                "[red]Usage:[/red] yt queue listen [--once] [--poll-interval N]"
+            )
+            sys.exit(1)
+    return once, poll_interval
+
+
+def upload_existing_video_to_cloud(
+    video_id: str,
+    connection_key: str | None = None,
+) -> bool:
+    """Upload an already-local video to the active cloud connection."""
+    folder = find_by_video_id(video_id)
+    if not folder:
+        return False
+
+    transcript_md = read_transcript(folder)
+    if not transcript_md:
+        raise RuntimeError(f"transcript.md not found for {video_id}")
+
+    parsed = parse_folder_name(folder.name)
+    if not parsed:
+        raise RuntimeError(f"could not parse local folder name for {video_id}")
+
+    success = upload_video(
+        video_id=video_id,
+        date=parsed["date"],
+        title=parsed["title"],
+        transcript_md=transcript_md,
+        summary_md=read_summary(folder),
+        brief_summary_md=read_brief_summary(folder),
+        metadata=read_video_metadata(folder),
+        tags=read_tags(folder),
+        connection_key=connection_key,
+    )
+    if success:
+        console.print(f"[dim]Synced existing local video {video_id} to cloud.[/dim]")
+    return success
+
+
+def process_queue_video(
+    url: str,
+    connection_key: str | None = None,
+    model: str | None = None,
+    ai_engine: str | None = None,
+):
+    """Process one queued video and require a successful cloud upload."""
+    video_id = extract_video_id(url)
+    if upload_existing_video_to_cloud(video_id, connection_key=connection_key):
+        return
+
+    add_video(
+        url,
+        regenerate=False,
+        prompt_regenerate=False,
+        model=model,
+        ai_engine=ai_engine,
+        connection_key=connection_key,
+        require_cloud_sync=True,
+    )
+
+
+def format_queue_error(error: BaseException) -> str:
+    if isinstance(error, SystemExit):
+        return f"processing exited with code {error.code}"
+    message = str(error).strip()
+    return message or error.__class__.__name__
+
+
+def process_claimed_queue_item(
+    item: dict,
+    worker_id: str,
+    connection_key: str | None = None,
+    model: str | None = None,
+    ai_engine: str | None = None,
+):
+    queue_id = str(item["_id"])
+    url = str(item["url"])
+    video_id = str(item.get("videoId") or url)
+
+    try:
+        console.print(f"[bold]Processing queued video[/bold] {video_id}")
+        process_queue_video(
+            url,
+            connection_key=connection_key,
+            model=model,
+            ai_engine=ai_engine,
+        )
+    except (Exception, SystemExit) as e:
+        error_message = format_queue_error(e)
+        fail_queue_item(
+            queue_id,
+            worker_id,
+            error_message,
+            connection_key=connection_key,
+        )
+        console.print(f"[red]Queue item failed:[/red] {error_message}")
+        return
+
+    if complete_queue_item(queue_id, worker_id, connection_key=connection_key):
+        console.print("[green]Queue item completed.[/green]")
+    else:
+        console.print("[red]Processed video, but failed to complete queue item.[/red]")
+
+
+def listen_to_queue(
+    once: bool = False,
+    poll_interval: int = 10,
+    connection_key: str | None = None,
+    model: str | None = None,
+    ai_engine: str | None = None,
+):
+    """Claim and process cloud queue items one at a time."""
+    if not is_connected(connection_key):
+        if connection_key in ("dev", "prod"):
+            console.print(
+                f"[red]Connect first:[/red] yt --{connection_key} connect <api-key>"
+            )
+        elif connection_key:
+            console.print(
+                f"[red]Connect first:[/red] yt --connection_key {connection_key} "
+                "connect <api-key> --convex_url <url>"
+            )
+        else:
+            console.print(
+                "[red]Connect first:[/red] yt --prod connect <api-key> "
+                "or yt --dev connect <api-key>"
+            )
+        sys.exit(1)
+
+    worker_id = f"{os.uname().nodename}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    console.print(f"[dim]Listening for queued videos as {worker_id}.[/dim]")
+
+    try:
+        while True:
+            item = claim_queue_item(worker_id, connection_key=connection_key)
+            if item:
+                process_claimed_queue_item(
+                    item,
+                    worker_id,
+                    connection_key=connection_key,
+                    model=model,
+                    ai_engine=ai_engine,
+                )
+                if once:
+                    return
+                continue
+
+            if once:
+                console.print("[dim]No queued videos.[/dim]")
+                return
+
+            time.sleep(poll_interval)
+    except KeyboardInterrupt:
+        console.print("\n[dim]Stopped queue listener.[/dim]")
+
+
+def queue_cmd(
+    parts: tuple[str, ...] | list[str],
+    connection_key: str | None = None,
+    model: str | None = None,
+    ai_engine: str | None = None,
+):
+    """Manage cloud transcription queue processing."""
+    if not parts or parts[0] != "listen":
+        console.print("[red]Usage:[/red] yt queue listen [--once] [--poll-interval N]")
+        sys.exit(1)
+
+    once, poll_interval = parse_queue_listen_options(parts[1:])
+    listen_to_queue(
+        once=once,
+        poll_interval=poll_interval,
+        connection_key=connection_key,
+        model=model,
+        ai_engine=ai_engine,
+    )
+
+
 def setup_shell():
     """Add noglob aliases to the user's shell config so URLs work without quoting."""
     shell = os.environ.get("SHELL", "")
@@ -1031,7 +1261,8 @@ def interactive_mode():
         console.print("[5] Open web viewer")
         console.print("[6] Delete transcript [dim](6 <video_id>)[/dim]")
         console.print("[7] Sync missing videos")
-        console.print("[8] Exit")
+        console.print("[8] Listen to cloud queue")
+        console.print("[9] Exit")
         console.print()
 
         parts = click.prompt(">", type=str).strip().split()
@@ -1065,7 +1296,9 @@ def interactive_mode():
             delete_video_cmd(ref)
         elif action == "7":
             sync_missing_videos()
-        elif action in ("8", "q", "exit"):
+        elif action == "8":
+            listen_to_queue()
+        elif action in ("9", "q", "exit"):
             break
         else:
             console.print("[dim]Invalid choice.[/dim]")
@@ -1115,6 +1348,8 @@ def cli(args):
       yt sync                   Upload latest 100 local videos missing from cloud
       yt sync --all             Upload all local videos missing from cloud
       yt sync --limit N         Upload latest N local videos missing from cloud
+      yt queue listen           Listen for cloud-queued videos
+      yt queue listen --once    Claim at most one queued video and exit
       yt disconnect             Remove cloud connection
       yt setup-shell            Configure shell aliases for URLs
 
@@ -1168,6 +1403,13 @@ def cli(args):
     elif cmd == "sync":
         limit = parse_batch_options(args[1:], "yt sync", DEFAULT_BATCH_SIZE)
         sync_missing_videos(limit, connection_key=connection_key)
+    elif cmd == "queue":
+        queue_cmd(
+            args[1:],
+            connection_key=connection_key,
+            model=model,
+            ai_engine=ai_engine,
+        )
     elif cmd == "disconnect":
         config = load_config()
         disconnect_key = selected_or_default_connection_key(config, connection_key)

@@ -109,6 +109,92 @@ def get_missing_video_ids(
     return missing
 
 
+def claim_queue_item(
+    worker_id: str,
+    connection_key: str | None = None,
+) -> dict | None:
+    """Claim the next queued cloud transcription job for this connection."""
+    config = load_config()
+    connection = get_connection(config, connection_key)
+    if not connection:
+        return None
+
+    try:
+        resp = requests.post(
+            f"{connection['convex_url']}/api/queue/claim",
+            json={"workerId": worker_id},
+            headers={"Authorization": f"Bearer {connection['api_key']}"},
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            return None
+
+        data = resp.json()
+        item = data.get("item")
+        if item is None:
+            return None
+        if not isinstance(item, dict):
+            return None
+        if not isinstance(item.get("_id"), str) or not isinstance(
+            item.get("url"), str
+        ):
+            return None
+        return item
+    except (requests.RequestException, ValueError):
+        return None
+
+
+def complete_queue_item(
+    queue_id: str,
+    worker_id: str,
+    connection_key: str | None = None,
+) -> bool:
+    """Mark a claimed queue item complete."""
+    config = load_config()
+    connection = get_connection(config, connection_key)
+    if not connection:
+        return False
+
+    try:
+        resp = requests.post(
+            f"{connection['convex_url']}/api/queue/complete",
+            json={"id": queue_id, "workerId": worker_id},
+            headers={"Authorization": f"Bearer {connection['api_key']}"},
+            timeout=30,
+        )
+        return resp.status_code == 200
+    except requests.RequestException:
+        return False
+
+
+def fail_queue_item(
+    queue_id: str,
+    worker_id: str,
+    error_message: str,
+    connection_key: str | None = None,
+) -> bool:
+    """Mark a claimed queue item failed."""
+    config = load_config()
+    connection = get_connection(config, connection_key)
+    if not connection:
+        return False
+
+    try:
+        resp = requests.post(
+            f"{connection['convex_url']}/api/queue/fail",
+            json={
+                "id": queue_id,
+                "workerId": worker_id,
+                "errorMessage": error_message[:2000],
+            },
+            headers={"Authorization": f"Bearer {connection['api_key']}"},
+            timeout=30,
+        )
+        return resp.status_code == 200
+    except requests.RequestException:
+        return False
+
+
 def upload_video(
     video_id: str,
     date: str,

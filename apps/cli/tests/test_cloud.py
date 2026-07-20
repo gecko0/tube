@@ -6,6 +6,9 @@ import pytest
 
 from yt.cloud import (
     DEFAULT_PROD_CONVEX_URL,
+    claim_queue_item,
+    complete_queue_item,
+    fail_queue_item,
     get_connection,
     get_missing_video_ids,
     is_connected,
@@ -280,6 +283,77 @@ class TestGetMissingVideoIds:
         assert result == []
         assert mock_post.call_args.args[0] == f"{DEFAULT_PROD_CONVEX_URL}/api/missing"
         assert mock_post.call_args.kwargs["headers"]["Authorization"] == "Bearer prod-key"
+
+
+# ---------------------------------------------------------------------------
+# queue worker endpoints
+# ---------------------------------------------------------------------------
+class TestQueueEndpoints:
+    def test_claim_queue_item_returns_item(self, config_path):
+        save_config({"api_key": "my-key"})
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "item": {
+                "_id": "queue-id",
+                "videoId": "dQw4w9WgXcQ",
+                "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            }
+        }
+
+        with patch("yt.cloud.requests.post", return_value=mock_resp) as mock_post:
+            result = claim_queue_item("worker-1")
+
+        assert result == mock_resp.json.return_value["item"]
+        assert mock_post.call_args.args[0] == (
+            "https://sensible-alligator-750.convex.site/api/queue/claim"
+        )
+        assert mock_post.call_args.kwargs["json"] == {"workerId": "worker-1"}
+        assert mock_post.call_args.kwargs["headers"]["Authorization"] == "Bearer my-key"
+
+    def test_claim_queue_item_returns_none_when_empty(self, config_path):
+        save_config({"api_key": "my-key"})
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"item": None}
+
+        with patch("yt.cloud.requests.post", return_value=mock_resp):
+            assert claim_queue_item("worker-1") is None
+
+    def test_complete_queue_item_posts_claim_identity(self, config_path):
+        save_config({"api_key": "my-key"})
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+
+        with patch("yt.cloud.requests.post", return_value=mock_resp) as mock_post:
+            result = complete_queue_item("queue-id", "worker-1")
+
+        assert result is True
+        assert mock_post.call_args.args[0] == (
+            "https://sensible-alligator-750.convex.site/api/queue/complete"
+        )
+        assert mock_post.call_args.kwargs["json"] == {
+            "id": "queue-id",
+            "workerId": "worker-1",
+        }
+
+    def test_fail_queue_item_posts_error(self, config_path):
+        save_config({"api_key": "my-key"})
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+
+        with patch("yt.cloud.requests.post", return_value=mock_resp) as mock_post:
+            result = fail_queue_item("queue-id", "worker-1", "boom")
+
+        assert result is True
+        assert mock_post.call_args.args[0] == (
+            "https://sensible-alligator-750.convex.site/api/queue/fail"
+        )
+        assert mock_post.call_args.kwargs["json"] == {
+            "id": "queue-id",
+            "workerId": "worker-1",
+            "errorMessage": "boom",
+        }
 
 
 # ---------------------------------------------------------------------------

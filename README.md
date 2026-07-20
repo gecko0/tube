@@ -103,6 +103,8 @@ Usage: yt [ARGS]...
     yt sync                   Upload latest 100 local videos missing from cloud
     yt sync --all             Upload all local videos missing from cloud
     yt sync --limit N         Upload latest N local videos missing from cloud
+    yt queue listen           Listen for cloud-queued videos
+    yt queue listen --once    Claim at most one queued video and exit
     yt disconnect             Remove cloud connection
     yt setup-shell            Configure shell aliases for URLs
 
@@ -245,6 +247,28 @@ Claude model precedence is: CLI option, saved config, `YT_CLAUDE_MODEL`, then `s
 
 Codex model precedence is: CLI option, saved config, `YT_CODEX_MODEL`, then `gpt-5.5`. If Codex receives a known Claude alias such as `opus`, `sonnet`, or `fable`, `yt` prints a warning and falls back to `gpt-5.5`.
 
+### Process videos queued from the cloud web app
+
+Create an API key in the web app settings, connect the CLI, then start a queue
+listener:
+
+```bash
+yt --prod connect <api-key>
+yt --prod queue listen
+```
+
+The listener claims one queued video at a time for the connected user, processes
+it locally, syncs the finished transcript and summaries back to Convex, then
+removes the completed item from the queue. If processing fails, the web app keeps
+the item in the queue with an error so it can be retried or canceled.
+
+For one-shot runs, such as a scheduled job:
+
+```bash
+yt --prod queue listen --once
+yt --prod queue listen --poll-interval 5
+```
+
 ### List saved transcripts
 
 ```bash
@@ -360,7 +384,8 @@ Run `yt` with no arguments to get a menu:
 [5] Open web viewer
 [6] Delete transcript (6 <video_id>)
 [7] Sync missing videos
-[8] Exit
+[8] Listen to cloud queue
+[9] Exit
 ```
 
 In interactive mode you can combine action and reference in one input, e.g. `4 dQw4w9WgXcQ` to view a summary by video ID.

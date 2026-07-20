@@ -77,4 +77,36 @@ export default defineSchema({
   })
     .index("by_keyHash", ["keyHash"])
     .index("by_userId", ["userId"]),
+
+  transcriptionQueue: defineTable({
+    userId: v.string(),
+    videoId: v.string(),
+    url: v.string(),
+    status: v.union(
+      v.literal("queued"),
+      v.literal("processing"),
+      v.literal("error")
+    ),
+    errorMessage: v.optional(v.string()),
+    attempts: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    claimedBy: v.optional(v.string()),
+    claimExpiresAt: v.optional(v.number()),
+  })
+    .index("by_userId_and_status_and_createdAt", [
+      "userId",
+      "status",
+      "createdAt",
+    ])
+    .index("by_userId_and_videoId_and_status", [
+      "userId",
+      "videoId",
+      "status",
+    ])
+    .index("by_userId_and_status_and_claimExpiresAt", [
+      "userId",
+      "status",
+      "claimExpiresAt",
+    ]),
 });

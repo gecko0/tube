@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react"
+import { useQuery } from "convex/react"
 import { FolderFormDialog } from "@/components/folder-form-dialog"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import { api } from "../../../convex/_generated/api"
+import { QueuePage } from "@/features/queue/queue-page"
 import { AppSidebar } from "@/features/videos/components/app-sidebar"
 import { VideoDetail } from "@/features/videos/components/video-detail"
 import { VideoGrid } from "@/features/videos/components/video-grid"
@@ -19,7 +22,7 @@ import {
 import { VideoDeleteDialog } from "@/features/videos/video-delete-dialog"
 import { VideosHeader } from "@/features/videos/videos-header"
 import { useDialog, useDialogWithData } from "@/hooks/use-dialog"
-import type { FolderScope, FolderSummary } from "@/lib/types"
+import type { AppView, FolderScope, FolderSummary } from "@/lib/types"
 
 function useDebouncedValue<T>(value: T, delayMs: number) {
   const [debouncedValue, setDebouncedValue] = useState(value)
@@ -36,8 +39,10 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
 }
 
 export function VideosPage() {
+  const [activeView, setActiveView] = useState<AppView>("videos")
   const [folderScope, setFolderScope] = useState<FolderScope>({ kind: "all" })
   const [tagFilter, setTagFilter] = useState("")
+  const queueCount = useQuery(api.transcriptionQueue.count) ?? 0
   const debouncedTagFilter = useDebouncedValue(tagFilter.trim(), 300)
   const videoDeleteDialog = useDialog()
   const folderFormDialog = useDialogWithData<FolderSummary>()
@@ -123,7 +128,14 @@ export function VideosPage() {
   const folderDeleteTarget = folderDeleteDialog.data ?? null
 
   const handleFolderScopeChange = useCallback((scope: FolderScope) => {
+    setActiveView("videos")
     setFolderScope(scope)
+    clearMultiSelection()
+    clearOpenVideo()
+  }, [clearMultiSelection, clearOpenVideo])
+
+  const handleQueueOpen = useCallback(() => {
+    setActiveView("queue")
     clearMultiSelection()
     clearOpenVideo()
   }, [clearMultiSelection, clearOpenVideo])
@@ -184,6 +196,7 @@ export function VideosPage() {
     }
 
     const folderId = await createFolder({ name })
+    setActiveView("videos")
     setFolderScope({ kind: "folder", folderId })
     clearMultiSelection()
     clearOpenVideo()
@@ -226,10 +239,13 @@ export function VideosPage() {
   return (
     <SidebarProvider>
       <AppSidebar
+        activeView={activeView}
         folders={folders}
         folderScope={folderScope}
         dropTargetKey={dropTargetKey}
+        queueCount={queueCount}
         onFolderScopeChange={handleFolderScopeChange}
+        onQueueOpen={handleQueueOpen}
         onCreateFolder={() => folderFormDialog.open()}
         onRenameFolder={(folder) => folderFormDialog.open(folder)}
         onDeleteFolder={handleDeleteFolder}
@@ -255,7 +271,9 @@ export function VideosPage() {
           onSubmit={handleSubmitFolderForm}
         />
         <main className="flex-1 overflow-auto">
-          {detail === undefined && selectedVideoId ? (
+          {activeView === "queue" ? (
+            <QueuePage />
+          ) : detail === undefined && selectedVideoId ? (
             <div className="flex h-64 items-center justify-center">
               <span className="text-muted-foreground">Loading...</span>
             </div>

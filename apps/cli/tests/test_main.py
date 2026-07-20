@@ -8,12 +8,16 @@ from yt.main import (
     add_video,
     cli,
     delete_video_cmd,
+    listen_to_queue,
     parse_ai_options,
     parse_config_options,
     parse_connection_options,
     parse_model_options,
+    process_claimed_queue_item,
+    process_queue_video,
     parse_video_options,
     resolve_ref,
+    upload_existing_video_to_cloud,
 )
 
 
@@ -508,6 +512,162 @@ class TestAddVideoModelOptions:
                 },
             ),
         ]
+
+
+# ---------------------------------------------------------------------------
+# queue command
+# ---------------------------------------------------------------------------
+class TestQueueCommand:
+    @patch("yt.main.listen_to_queue")
+    def test_queue_listen_once_dispatches_to_listener(self, mock_listen):
+        result = CliRunner().invoke(cli, ["queue", "listen", "--once"])
+
+        assert result.exit_code == 0
+        mock_listen.assert_called_once_with(
+            once=True,
+            poll_interval=10,
+            connection_key=None,
+            model=None,
+            ai_engine=None,
+        )
+
+    @patch("yt.main.listen_to_queue")
+    def test_queue_listen_accepts_poll_interval(self, mock_listen):
+        result = CliRunner().invoke(
+            cli, ["--prod", "queue", "listen", "--poll-interval", "3"]
+        )
+
+        assert result.exit_code == 0
+        mock_listen.assert_called_once_with(
+            once=False,
+            poll_interval=3,
+            connection_key="prod",
+            model=None,
+            ai_engine=None,
+        )
+
+    def test_queue_listen_requires_connection(self):
+        with patch("yt.main.is_connected", return_value=False):
+            result = CliRunner().invoke(cli, ["queue", "listen", "--once"])
+
+        assert result.exit_code != 0
+        assert "Connect first" in result.output
+
+    def test_listen_once_processes_claimed_item(self):
+        item = {
+            "_id": "queue-id",
+            "videoId": "dQw4w9WgXcQ",
+            "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        }
+
+        with (
+            patch("yt.main.is_connected", return_value=True),
+            patch("yt.main.uuid.uuid4") as mock_uuid,
+            patch("yt.main.claim_queue_item", return_value=item) as mock_claim,
+            patch("yt.main.process_claimed_queue_item") as mock_process,
+        ):
+            mock_uuid.return_value.hex = "abcdef123456"
+            listen_to_queue(once=True)
+
+        worker_id = mock_claim.call_args.args[0]
+        assert worker_id.endswith("-abcdef12")
+        mock_process.assert_called_once_with(
+            item,
+            worker_id,
+            connection_key=None,
+            model=None,
+            ai_engine=None,
+        )
+
+    def test_process_claimed_queue_item_completes_on_success(self):
+        item = {
+            "_id": "queue-id",
+            "videoId": "dQw4w9WgXcQ",
+            "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        }
+
+        with (
+            patch("yt.main.process_queue_video") as mock_process_video,
+            patch("yt.main.complete_queue_item", return_value=True) as mock_complete,
+            patch("yt.main.fail_queue_item") as mock_fail,
+        ):
+            process_claimed_queue_item(item, "worker-1", connection_key="prod")
+
+        mock_process_video.assert_called_once_with(
+            item["url"],
+            connection_key="prod",
+            model=None,
+            ai_engine=None,
+        )
+        mock_complete.assert_called_once_with(
+            "queue-id",
+            "worker-1",
+            connection_key="prod",
+        )
+        mock_fail.assert_not_called()
+
+    def test_process_claimed_queue_item_marks_error_on_failure(self):
+        item = {
+            "_id": "queue-id",
+            "videoId": "dQw4w9WgXcQ",
+            "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        }
+
+        with (
+            patch("yt.main.process_queue_video", side_effect=RuntimeError("boom")),
+            patch("yt.main.complete_queue_item") as mock_complete,
+            patch("yt.main.fail_queue_item", return_value=True) as mock_fail,
+        ):
+            process_claimed_queue_item(item, "worker-1", connection_key="prod")
+
+        mock_complete.assert_not_called()
+        mock_fail.assert_called_once_with(
+            "queue-id",
+            "worker-1",
+            "boom",
+            connection_key="prod",
+        )
+
+    def test_process_queue_video_uploads_existing_local_video(self):
+        url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+        with (
+            patch("yt.main.upload_existing_video_to_cloud", return_value=True) as mock_upload_existing,
+            patch("yt.main.add_video") as mock_add_video,
+        ):
+            process_queue_video(url, connection_key="prod")
+
+        mock_upload_existing.assert_called_once_with(
+            "dQw4w9WgXcQ",
+            connection_key="prod",
+        )
+        mock_add_video.assert_not_called()
+
+    def test_upload_existing_video_to_cloud_reads_local_files(self, transcripts_dir):
+        folder = transcripts_dir / "2025-06-15 - dQw4w9WgXcQ - Existing"
+        folder.mkdir()
+        (folder / "transcript.md").write_text("# Transcript", encoding="utf-8")
+        (folder / "summary.md").write_text("# Summary", encoding="utf-8")
+        (folder / "brief_summary.md").write_text("# Brief", encoding="utf-8")
+        (folder / "tags.json").write_text(
+            json.dumps({"tags": ["python", "ai"]}),
+            encoding="utf-8",
+        )
+
+        with patch("yt.main.upload_video", return_value=True) as mock_upload:
+            assert upload_existing_video_to_cloud("dQw4w9WgXcQ", "prod") is True
+
+        mock_upload.assert_called_once_with(
+            video_id="dQw4w9WgXcQ",
+            date="2025-06-15",
+            title="Existing",
+            transcript_md="# Transcript",
+            summary_md="# Summary",
+            brief_summary_md="# Brief",
+            metadata=None,
+            tags=["python", "ai"],
+            connection_key="prod",
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -13,6 +13,7 @@ import type * as auth from "../auth.js";
 import type * as folders from "../folders.js";
 import type * as http from "../http.js";
 import type * as tagUtils from "../tagUtils.js";
+import type * as transcriptionQueue from "../transcriptionQueue.js";
 import type * as validators from "../validators.js";
 import type * as videos from "../videos.js";
 
@@ -28,6 +29,7 @@ declare const fullApi: ApiFromModules<{
   folders: typeof folders;
   http: typeof http;
   tagUtils: typeof tagUtils;
+  transcriptionQueue: typeof transcriptionQueue;
   validators: typeof validators;
   videos: typeof videos;
 }>;
