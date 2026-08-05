@@ -16,6 +16,7 @@ import type * as tagUtils from "../tagUtils.js";
 import type * as transcriptionQueue from "../transcriptionQueue.js";
 import type * as validators from "../validators.js";
 import type * as videos from "../videos.js";
+import type * as youtube from "../youtube.js";
 
 import type {
   ApiFromModules,
@@ -32,6 +33,7 @@ declare const fullApi: ApiFromModules<{
   transcriptionQueue: typeof transcriptionQueue;
   validators: typeof validators;
   videos: typeof videos;
+  youtube: typeof youtube;
 }>;
 
 /**

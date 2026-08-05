@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "convex/react"
 import { AlertCircle, Loader2, Plus, RotateCcw, Trash2 } from "lucide-react"
 
 import { api } from "../../../convex/_generated/api"
+import { thumbnailUrl } from "../../../convex/youtube"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -32,6 +33,24 @@ function QueueStatusBadge({ status }: { status: QueueStatus }) {
   )
 }
 
+function QueueItemThumbnail({ videoId }: { videoId: string }) {
+  const [failed, setFailed] = useState(false)
+
+  return (
+    <div className="aspect-video w-28 shrink-0 overflow-hidden rounded-md bg-muted sm:w-36">
+      {!failed && (
+        <img
+          src={thumbnailUrl(videoId)}
+          alt=""
+          loading="lazy"
+          className="size-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      )}
+    </div>
+  )
+}
+
 function QueueItemRow({
   item,
   onRetry,
@@ -43,32 +62,35 @@ function QueueItemRow({
 }) {
   return (
     <div className="grid gap-3 rounded-md border px-3 py-3 sm:grid-cols-[1fr_auto] sm:items-start">
-      <div className="min-w-0 space-y-1.5">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="truncate font-mono text-sm font-medium">
-            {item.videoId}
-          </span>
-          <QueueStatusBadge status={item.status} />
-          {item.attempts > 0 && (
-            <span className="text-xs text-muted-foreground">
-              Attempt {item.attempts}
+      <div className="flex min-w-0 gap-3">
+        <QueueItemThumbnail videoId={item.videoId} />
+        <div className="min-w-0 space-y-1.5">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="truncate font-mono text-sm font-medium">
+              {item.videoId}
             </span>
+            <QueueStatusBadge status={item.status} />
+            {item.attempts > 0 && (
+              <span className="text-xs text-muted-foreground">
+                Attempt {item.attempts}
+              </span>
+            )}
+          </div>
+          <a
+            href={item.url}
+            target="_blank"
+            rel="noreferrer"
+            className="block truncate text-sm text-muted-foreground hover:text-foreground"
+          >
+            {item.url}
+          </a>
+          {item.status === "error" && item.errorMessage && (
+            <div className="flex items-start gap-2 text-sm text-destructive">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" />
+              <span className="min-w-0 break-words">{item.errorMessage}</span>
+            </div>
           )}
         </div>
-        <a
-          href={item.url}
-          target="_blank"
-          rel="noreferrer"
-          className="block truncate text-sm text-muted-foreground hover:text-foreground"
-        >
-          {item.url}
-        </a>
-        {item.status === "error" && item.errorMessage && (
-          <div className="flex items-start gap-2 text-sm text-destructive">
-            <AlertCircle className="mt-0.5 size-4 shrink-0" />
-            <span className="min-w-0 break-words">{item.errorMessage}</span>
-          </div>
-        )}
       </div>
       <div className="flex shrink-0 items-center gap-2 sm:justify-end">
         {item.status === "error" && (
